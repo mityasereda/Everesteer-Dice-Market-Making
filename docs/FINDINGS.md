@@ -73,7 +73,7 @@ Conclusions:
 - Clever feature design, identity weighting and a structural dice decode did not help. My early guess that agent quality differences explained the gap was wrong.
 - A pretrained starting prior only helps the first 30 rounds. Step 3 error in those rounds: 4.11 (old reader prior) to 3.65 (pooled prior, lambda 100).
 
-## 6. Agent v1 (`dice_market/agent.py`)
+## 6. Agent v5 (`dice_market/agent.py`, the current version)
 
 - Estimates the value at each step as a linear function of my dice and the other seats' mids at earlier steps. Weights start at `PRIOR` (the pooled fit) and are refined every round by recursive ridge regression (`lam=30`, see section 8), written in plain Python.
 - Quotes estimate +/- half width (2, 2, 1.0, 1.0 by step, tuned in section 8) and shifts against inventory (0.25 per unit). The bid is snapped to the 0.5 grid and ask = bid + width, so rounding can never narrow or invalidate a quote.
