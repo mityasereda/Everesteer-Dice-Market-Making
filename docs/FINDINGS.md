@@ -1,14 +1,14 @@
 # Dice Market Making: findings, status and ideas
 
 Working notes for the Everesteer dice market making challenge. Last updated 27 Oct 2026. The challenge closes
-**1 Nov 2026, 00:00 London time**. Nothing has been uploaded to the leaderboard yet.
+**1 Nov 2026, 00:00 London time**. Version v5 was uploaded on 27 Oct 2026 and is on the leaderboard (see section 1).
 
 ## 1. Status
 
 | Item | State |
 |---|---|
 | `dice_market/agent.py` (v1, adaptive reader) | Written, passes `--check`, 0 errors and 0 timeouts over a full 200-round match |
-| Upload to the leaderboard | **Not done.** Needs the owner's go-ahead. 20 uploads per day, 30 s apart |
+| Upload to the leaderboard | **Done 27 Oct 2026** as "adaptive reader v5" (version id 24f4d3). Passed the boss gate 3 of 3 (+5.75 / +4.09 / +4.55 per round vs the boss +3.20 / +0.77 / +1.99). Elo not shown until it has played matches |
 | Replay dataset | Downloaded locally (771 MB, not in git). 56,160 matches |
 | Real-field strength of v1 | **Unknown.** Local tests only cover the house agents, which are much weaker than real candidates |
 
@@ -200,7 +200,37 @@ dice are hidden); `run()` now asserts that every mix has exactly 4 opponents.
 workers sharing the CPU, which looks like scheduling noise; a gate attempt requires zero slow answers, so a rare
 failure on that ground is possible and retryable. `agent.py` uses no imports and none of the names the upload scan refuses.
 
-## 9. How to reproduce
+## 9. First real results: v5 loses, and why (27 Oct 2026, 25 matches)
+
+After 30 leaderboard matches v5 had **Elo 1042, rank 52, -0.41 per round**. In the 25 listed matches (23 replays could
+be downloaded): average rank 3.64 (3.00 is the middle), pairwise win rate 34%, -0.34 per round. The local suite had
+predicted a win rate of about 0.6. Replaying the recorded history through `agent.py` reproduces all 18,400 live quotes
+exactly, so the analysis (`analysis/my_matches.py`) is on solid ground.
+
+**Where the edge went (per round, 4,600 rounds):**
+
+| | Me | Average candidate |
+|---|---|---|
+| Step 0, midpoint crosses | **-0.58** | +0.17 |
+| Steps 1 to 3, all roles | +0.28 | +0.11 |
+| Total | -0.30 | +0.28 |
+
+- My estimates are fine: RMSE 3.11 vs 3.14 for other candidates at step 3, 4.39 vs 5.78 at step 1. At steps 1 to 3 I am slightly better than the average candidate. **The whole deficit is the step-0 quote.**
+- **The field changed.** In the first four days 82% to 100% of the top agents quoted the default 40 / 44 at step 0. In my matches only 56% of rivals do. Seats that quote informed at step 0 earn +0.79 per round there; hiders lose 0.35, and I lose 0.58. Informed rivals cross my default quote at the midpoint whenever their dice put the value away from 42.
+- **Every current leader quotes informed at step 0** (default share 0% to 17%), with a mid slope on their own dice of 1.5 to 2.2 (so they lean into their dice more than fair value does). Only MPP and Docsdadi, the early leaders, still hide, and they lose 0.7 to 0.8 per round at step 0.
+- **Counterfactual on 325,500 recorded seat-rounds** (`analysis/step0_counterfactual.py`, `step0_search.py`; step 0 is clean because nobody can react yet). On held-out matches: default 40/44 **-0.815**, quote centred on 42 + 1.5 x (dice - 7) with width 4 **+0.314 +- 0.014**, k=2 +0.269, k=1 (fair value) +0.103, k=2.5 +0.059, k=3 -0.275. A smooth curve with a peak at k of 1.5 to 2, matching what the leaders do.
+- **Cost of revealing:** seats that quote informed at step 0 earn 0.30 less at steps 1 to 3 (-0.08 vs +0.22), an upper bound because it is confounded with skill. Net per round: informed about +0.23, default about -0.60.
+- **Slow learner.** My steps 1 to 3 earn about 0 in rounds 0 to 99 and +0.5 to +0.7 in rounds 100 to 199, so the learner needs about half a match. The pretrained prior was fitted on the first four days, when step-0 mids carried no information.
+
+**Why the local tests were wrong:** all opponent copies and the prior came from the first four days of data. Frozen at that
+field, the copies all hide at step 0 and so never exploit a hider. Lesson: refit the copies on recent matches before
+trusting any local result, and check the live leaderboard early.
+
+**Planned fix (v6, not yet built):** (1) quote informed at step 0, centre 42 + 1.5 x (dice - 7), width 4; (2) refit the prior on
+recent matches and speed up learning (for example one shared weight per step on the others' summed mids instead of four
+separate ones); (3) refit the opponent copies on the new field.
+
+## 10. How to reproduce
 
 ```
 cd dice_market
@@ -210,6 +240,10 @@ python3 tourney.py agent.py                 # local tournaments against the hous
 python3 analysis/passive.py agent.py 150    # estimation error on recorded real matches
 python3 analysis/profile.py data/replays.jsonl.gz data/profile.json 8   # per-agent statistics
 python3 analysis/charts.py ../docs/data/profile.json ../docs/figures    # the figures above
+python3 dmapi.py --json matches --mine > data/mine.json   # then `dmapi.py replay <id> -o data/mine/<id>.json` for each id
+python3 analysis/my_matches.py                  # where my real matches lose money
+python3 analysis/step0_counterfactual.py data/new.jsonl.gz 660   # step-0 quote alternatives vs recorded rivals
+python3 analysis/step0_search.py data/new.jsonl.gz               # train / test search of step-0 quotes
 python3 analysis/fit_opponents.py data/replays.jsonl.gz opponents/fits.json 3   # fit the imitation agents
 python3 analysis/make_opponents.py opponents/fits.json opponents                 # write opponents/imit_*.py
 python3 analysis/make_adaptive.py opponents/fits.json agent.py opponents         # write opponents/adapt_*.py
