@@ -1,0 +1,4 @@
+dice_market/data/
+.DS_Store
+__pycache__/
+*.npz.bak
