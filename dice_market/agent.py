@@ -24,10 +24,10 @@ PARAMS = dict(
     step0_w=4.0,                 # informed step 0: full quote width
 )
 # Starting weights per step: (weight on my dice, weight on each other seat's mid at step 0, 1, ...). Pooled least-squares
-# fit on 2,200 real matches played on 27 Oct 2026 (analysis/fit_prior.py), when about half the field already quoted
-# informed at step 0. (The first fit, on 23-26 Oct when almost everyone hid, was 0.72 / 0.75 / 0.26 ...)
+# fit on 2,200 real matches played on 27 Oct 2026 (analysis/fit_prior.py informed), using only seat-rounds that quoted
+# informed at step 0, as v6 does: rivals' later mids then echo my own dice, so the weight on my dice is lower. (The first fit, on 23-26 Oct when almost everyone hid, was 0.72 / 0.75 / 0.26 ...)
 # None gives the old "house reader" prior (every step-0 mid read as that seat's dice).
-PRIOR = {0: (1.0, []), 1: (1.00, [0.57]), 2: (0.55, [0.05, 0.19]), 3: (0.30, [0.10, -0.06, 0.26])}
+PRIOR = {0: (1.0, []), 1: (1.00, [0.55]), 2: (0.28, [0.06, 0.20]), 3: (0.26, [0.12, -0.08, 0.28])}
 
 
 def _dot(a, b):
