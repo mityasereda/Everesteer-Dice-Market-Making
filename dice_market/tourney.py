@@ -1,12 +1,20 @@
 """Local tournament harness: play many 5-seat matches of one agent against a mix of opponents.
 
-    python3 tourney.py agent.py                      # every mix, 60 matches each
-    python3 tourney.py agent.py --mix readers -n 100
-    python3 tourney.py agent.py --mix self           # 5 copies of the agent
+    python3 tourney.py agent.py                         # the default suite
+    python3 tourney.py agent.py --mix gate_imit -n 100
+    python3 tourney.py agent.py --pool imit -n 300      # random tables from the nine imitations plus me
 
-Seats are shuffled per match, so seat position does not matter. Dice depend on the seed alone, so every agent
-sees the same dice for a given seed. Reports P&L per round (mean +- standard error), and the share of pairwise
-games won, which is what the Elo rating uses.
+Opponent families
+  house   the pack's house and example agents (far weaker than the real field)
+  imit    opponents/imit_*.py   static linear copies of real agents, fitted from the replays
+  adapt   opponents/adapt_*.py  my learning estimator with a real agent's spread widths, hiding and skew
+Both copy families are approximations of real agents' AVERAGE behaviour: results against them are provisional.
+
+Seats are shuffled per match and dice depend on the seed alone, so variants of an agent run with the same --seed are
+compared on identical dice and opponent behaviour. A match counts a "silent forced quote" when the agent returned an
+invalid quote that the engine replaced by 40 / 44 without logging an error.
+The gate mixes mirror the upload test (me, the boss, three example agents); the boss is the house-pro copy and
+"P(beat boss)" is my win rate against it, "P(pass)" the implied chance of beating it in at least 2 of 3 matches.
 """
 import argparse
 import random
@@ -17,6 +25,7 @@ from pathlib import Path
 import dicemarket as dm
 
 ROOT = Path(__file__).resolve().parent
+SHORT = ["docsdadi", "zudvarnoki", "mpp", "billhwang", "momarci13", "yurko", "joshua", "leobgg", "housepro"]
 FILES = {
     "fair_value": "examples/fair_value.py",
     "wide": "examples/wide_quoter.py",
@@ -26,17 +35,72 @@ FILES = {
     "house_reader": "house/house_reader.py",
     "house_hider": "house/house_hider.py",
 }
+for _s in SHORT:
+    FILES[f"imit_{_s}"] = f"opponents/imit_{_s}.py"
+    FILES[f"adapt_{_s}"] = f"opponents/adapt_{_s}.py"
+    FILES[f"adapt30_{_s}"] = f"opponents/adapt30_{_s}.py"   # adaptive copies that learn fast (lam 30) like my agent
+VERSIONS = ["v0", "v1", "v2", "v3", "v4"]   # interim versions of my own agent, opponents/ver_*.py (analysis/make_versions.py)
+for _v in VERSIONS:
+    FILES[f"ver_{_v}"] = f"opponents/ver_{_v}.py"
+A, B = ["docsdadi", "zudvarnoki", "mpp", "billhwang"], ["momarci13", "yurko", "joshua", "leobgg"]
 MIXES = {
     "weak": ["fair_value", "fair_value", "wide", "random"],
     "readers": ["house_reader", "house_reader", "house_hider", "house_fair_value"],
     "mixed": ["house_reader", "house_hider", "fair_value", "house_wide"],
     "hard": ["house_reader", "house_reader", "house_hider", "house_hider"],
     "self": ["me", "me", "me", "me"],
+    "gate_imit": ["imit_housepro", "fair_value", "wide", "random"],
+    "gate_adapt": ["adapt_housepro", "fair_value", "wide", "random"],
+    "fieldA_imit": [f"imit_{s}" for s in A],
+    "fieldB_imit": [f"imit_{s}" for s in B],
+    "fieldA_adapt": [f"adapt_{s}" for s in A],
+    "fieldB_adapt": [f"adapt_{s}" for s in B],
+    "pro_adapt": ["adapt_housepro", "adapt_docsdadi", "adapt_zudvarnoki", "adapt_billhwang"],
+    "fieldA_adapt30": [f"adapt30_{s}" for s in A],
+    "fieldB_adapt30": [f"adapt30_{s}" for s in B],
+    "pro_adapt30": ["adapt30_housepro", "adapt30_docsdadi", "adapt30_zudvarnoki", "adapt30_billhwang"],
+    "gate_adapt30": ["adapt30_housepro", "fair_value", "wide", "random"],
+    "pro_imit": ["imit_housepro", "imit_docsdadi", "imit_zudvarnoki", "imit_billhwang"],
+    "ver_all": [f"ver_{v}" for v in ("v0", "v1", "v2", "v3")],
+    **{f"vs_{v}": [f"ver_{v}"] * 4 for v in VERSIONS},
+    "ver_and_field": ["ver_v1", "ver_v3", "adapt_housepro", "adapt_zudvarnoki"],
+    "ver_old": [f"ver_{v}" for v in ("v1", "v2", "v3", "v4")],
 }
+SUITE = ["weak", "readers", "hard", "gate_imit", "gate_adapt", "fieldA_imit", "fieldB_imit", "fieldA_adapt", "fieldB_adapt",
+         "pro_adapt", "self"]
+
+
+POOLS = {"imit": [f"imit_{s}" for s in SHORT], "adapt": [f"adapt_{s}" for s in SHORT], "ver": [f"ver_{v}" for v in VERSIONS],
+         "all": [f"adapt_{s}" for s in SHORT] + [f"ver_{v}" for v in VERSIONS]}
 
 
 def _path(name, me):
     return str(me) if name == "me" else str(ROOT / FILES[name])
+
+
+def play_counted(paths, rounds, seed):
+    """play_match, also counting per seat the invalid quotes the engine silently replaced by 40 / 44."""
+    real, n, calls, silent = dm.clean_quote, len(paths), [0], [0] * len(paths)
+
+    def counting(q):
+        c = real(q)
+        seat = calls[0] % n
+        calls[0] += 1
+        if q is not None and c == dm.DEFAULT_QUOTE:
+            try:
+                same = (float(q[0]), float(q[1])) == dm.DEFAULT_QUOTE
+            except Exception:
+                same = False
+            if not same:
+                silent[seat] += 1
+        return c
+
+    dm.clean_quote = counting
+    try:
+        res = dm.play_match(paths, rounds=rounds, seed=seed)
+    finally:
+        dm.clean_quote = real
+    return res, silent
 
 
 def one_match(args):
@@ -44,46 +108,94 @@ def one_match(args):
     rng = random.Random(f"order:{seed}")
     order = ["me"] + list(names)
     rng.shuffle(order)
-    res = dm.play_match([_path(n, me) for n in order], rounds=rounds, seed=seed)
-    mine = [i for i, n in enumerate(order) if n == "me"]
-    i = mine[0]
+    res, silent = play_counted([_path(n, me) for n in order], rounds, seed)
+    i = order.index("me")
     pnl = res[i]["pnl_per_round"]
     wins = {}
     for j, n in enumerate(order):
         if j != i:
             d = pnl - res[j]["pnl_per_round"]
             wins.setdefault(n, []).append(1.0 if d > 0 else 0.5 if d == 0 else 0.0)
-    return pnl, wins, res[i]["errors"], res[i]["timeouts"]
+    ahead = sum(1 for j in range(len(order)) if j != i and res[j]["pnl_per_round"] > pnl)
+    tied = sum(1 for j in range(len(order)) if j != i and res[j]["pnl_per_round"] == pnl)
+    first = 1.0 / (1 + tied) if ahead == 0 else 0.0          # a tie for first shares the win
+    return pnl, wins, (res[i]["errors"], res[i]["timeouts"], res[i]["first_error"]), silent[i], first, 1 + ahead + tied / 2.0
 
 
 def run(me, mix, n, rounds=200, seed0=0, pool=None):
     names = MIXES[mix]
+    assert len(names) == 4, f"mix {mix} has {len(names)} opponents: a table must have 5 seats (4 opponents)"
     jobs = [(me, names, seed0 + k, rounds) for k in range(n)]
-    out = list(pool.map(one_match, jobs)) if pool else [one_match(j) for j in jobs]
+    out = list(pool.map(one_match, jobs, chunksize=2)) if pool else [one_match(j) for j in jobs]
     pnls = [o[0] for o in out]
-    wins, errs = {}, sum(o[2] + o[3] for o in out)
+    wins = {}
     for o in out:
         for k, v in o[1].items():
             wins.setdefault(k, []).extend(v)
     allw = [x for v in wins.values() for x in v]
     se = statistics.stdev(pnls) / len(pnls) ** 0.5 if len(pnls) > 1 else 0.0
-    return statistics.mean(pnls), se, statistics.mean(allw), {k: statistics.mean(v) for k, v in wins.items()}, errs
+    return {"pnl": statistics.mean(pnls), "se": se, "win": statistics.mean(allw),
+            "first": statistics.mean(o[4] for o in out), "rank": statistics.mean(o[5] for o in out),
+            "per": {k: statistics.mean(v) for k, v in wins.items()},
+            "errors": sum(o[2][0] for o in out), "timeouts": sum(o[2][1] for o in out),
+            "first_error": next((o[2][2] for o in out if o[2][2]), None), "silent": sum(o[3] for o in out)}
+
+
+def pool_run(me, family, n, rounds=200, seed0=0, pool=None):
+    """Random 5-seat tables drawn from the nine copies plus me. Returns {name: (win rate, P&L per round, tables)}."""
+    names = POOLS[family] + ["me"]
+    jobs = [(me, names, seed0 + k, rounds) for k in range(n)]
+    out = list(pool.map(pool_match, jobs, chunksize=2))
+    acc = {}
+    for table in out:
+        for name, w, p in table:
+            a = acc.setdefault(name, [0.0, 0.0, 0])
+            a[0] += w
+            a[1] += p
+            a[2] += 1
+    return {k: (v[0] / (4 * v[2]), v[1] / v[2], v[2]) for k, v in acc.items()}
+
+
+def pool_match(args):
+    me, names, seed, rounds = args
+    rng = random.Random(f"pool:{seed}")
+    order = rng.sample(names, 5)
+    res = dm.play_match([_path(n, me) for n in order], rounds=rounds, seed=seed)
+    pn = [r["pnl_per_round"] for r in res]
+    return [(order[i], sum(1.0 if pn[i] > pn[j] else 0.5 if pn[i] == pn[j] else 0.0 for j in range(5) if j != i), pn[i])
+            for i in range(5)]
+
+
+def fmt(mix, r):
+    detail = "  ".join(f"{k.replace('imit_', 'i_').replace('adapt_', 'a_')} {v:.2f}" for k, v in sorted(r["per"].items()))
+    boss = next((v for k, v in r["per"].items() if k.endswith("housepro")), None)
+    gate = ""
+    if boss is not None and mix.startswith("gate"):
+        gate = f"   P(beat boss) {boss:.2f}  P(pass 2 of 3) {3 * boss ** 2 - 2 * boss ** 3:.2f}"
+    return (f"{mix:13s} pairwise win {r['win']:.3f}   1st {r['first']:.3f}   avg rank {r['rank']:.2f}   P&L/round {r['pnl']:+.3f} +- {r['se']:.3f}   errors {r['errors']}   timeouts {r['timeouts']}   "
+            f"silent-forced {r['silent']}{gate}\n{'':13s} [{detail}]" + (f"\n{r['first_error']}" if r["first_error"] else ""))
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("agent")
-    ap.add_argument("--mix", default="all")
+    ap.add_argument("--mix", default="suite")
+    ap.add_argument("--pool", choices=["imit", "adapt", "ver", "all"])
     ap.add_argument("-n", type=int, default=60)
     ap.add_argument("--rounds", type=int, default=200)
     ap.add_argument("--seed", type=int, default=1000)
     a = ap.parse_args()
-    mixes = list(MIXES) if a.mix == "all" else [a.mix]
+    me = Path(a.agent).resolve()
     with ProcessPoolExecutor() as pool:
+        if a.pool:
+            res = pool_run(me, a.pool, a.n, a.rounds, a.seed, pool)
+            print(f"pool '{a.pool}' plus me ({len(POOLS[a.pool]) + 1} agents), {a.n} random 5-seat tables")
+            for name, (w, p, t) in sorted(res.items(), key=lambda kv: -kv[1][0]):
+                print(f"  {name:18s} win rate {100 * w:5.1f}%   P&L/round {p:+.3f}   tables {t}")
+            return
+        mixes = SUITE if a.mix == "suite" else list(MIXES) if a.mix == "all" else [a.mix]
         for m in mixes:
-            mean, se, win, per, errs = run(Path(a.agent).resolve(), m, a.n, a.rounds, a.seed, pool)
-            detail = "  ".join(f"{k} {v:.2f}" for k, v in sorted(per.items()))
-            print(f"{m:8s} P&L/round {mean:+.3f} +- {se:.3f}   win rate {win:.3f}   errors {errs}   [{detail}]")
+            print(fmt(m, run(me, m, a.n, a.rounds, a.seed, pool)))
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 AGENT = sys.argv[1]
 EVERY = int(sys.argv[2]) if len(sys.argv) > 2 else 150
-MODES = {f"lam {l}": dict(prior="keep", lam=float(l)) for l in (60, 100, 200, 400)}
+MODES = {f"lam {l}": dict(prior="keep", lam=float(l)) for l in (30, 50, 100)}
 
 
 def load():

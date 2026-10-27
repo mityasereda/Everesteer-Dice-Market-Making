@@ -12,9 +12,9 @@ WEIGHTS = None
 MEAN = 42.0
 CLIP0, CLIP = 5.0, 15.0     # a step-0 mid says at most +-5 about a pair of dice; later mids can say more
 PARAMS = dict(
-    half=(2.0, 2.0, 1.5, 1.5),   # half width of my quote, by step
-    skew=0.4,                    # price shift per unit of position
-    lam=100.0,                   # ridge strength towards the reader weights, in rounds
+    half=(2.0, 2.0, 1.0, 1.0),   # half width of my quote, by step (tuned on adaptive copies of real agents)
+    skew=0.25,                   # price shift per unit of position
+    lam=30.0,                    # ridge strength towards the prior weights, in rounds (30 beat 100 on rank in every mix)
     hide0=True,                # step 0: quote 40 / 44 so my first quote shows nothing of my dice
 )
 # Starting weights per step: (weight on my dice, weight on each other seat's mid at step 0, 1, ...). They are the
@@ -78,7 +78,9 @@ class Agent:
             return (MEAN - 2.0, MEAN + 2.0)
         centre = self.estimate(step, history) - self.p["skew"] * self.position(history)
         h = self.p["half"][step]
-        return (centre - h, centre + h)
+        bid = round((centre - h) * 2.0) / 2.0                 # snap the bid to the 0.5 grid, then ask = bid + width,
+        bid = min(max(bid, 12.0), 72.0 - 2.0 * h)             # so rounding can never narrow or invalidate the quote
+        return (bid, bid + 2.0 * h)
 
     def end_round(self, result):
         y = result["value"] - MEAN

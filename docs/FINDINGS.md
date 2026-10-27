@@ -75,21 +75,12 @@ Conclusions:
 
 ## 6. Agent v1 (`dice_market/agent.py`)
 
-- Estimates the value at each step as a linear function of my dice and the other seats' mids at earlier steps. Weights start at `PRIOR` (the pooled fit) and are refined every round by recursive ridge regression (`lam=100`), written in plain Python.
-- Quotes estimate +/- half width (2, 2, 1.5, 1.5 by step) and shifts against inventory (0.4 per unit).
+- Estimates the value at each step as a linear function of my dice and the other seats' mids at earlier steps. Weights start at `PRIOR` (the pooled fit) and are refined every round by recursive ridge regression (`lam=30`, see section 8), written in plain Python.
+- Quotes estimate +/- half width (2, 2, 1.0, 1.0 by step, tuned in section 8) and shifts against inventory (0.25 per unit). The bid is snapped to the 0.5 grid and ask = bid + width, so rounding can never narrow or invalidate a quote.
 - Hides at step 0 (quotes 40 / 44). In the house tournament this raised the win rate against the house hider from 34% to 92%.
 
-Local results (`python3 tourney.py agent.py`, 60 matches per mix, standard error about 0.07):
-
-| Opponents | P&L / round | Win rate |
-|---|---|---|
-| fair_value x2, wide, random | +5.3 | 100% |
-| house reader x2, house hider, house fair value | +3.1 | 99% |
-| house reader, hider, fair_value, house wide | +3.8 | 96% |
-| house reader x2, hider x2 | +3.9 | 100% |
-| 5 copies of itself | about 0 | about 50% |
-
-These are against weak opponents. Real candidates earn about +0.4 to +1.05 per round against each other, so expect much lower numbers on the real board.
+Local results of the tuned agent are in section 8. Against the house agents it wins about everything (+3 to +5 per
+round), but those agents are far weaker than real candidates, who earn about +0.4 to +1.05 per round against each other.
 
 **Pitfall found:** calling `numpy.linalg.solve` in `end_round` took 100 to 560 ms per call, far over the 0.05 s limit (200 timeouts in one match, which means forfeit). `--check` did not catch it because it only plays 50 rounds. Keep the learner in plain Python and always run a full 200-round match before uploading.
 
@@ -97,7 +88,7 @@ These are against weak opponents. Real candidates earn about +0.4 to +1.05 per r
 
 1. **Upload v1** to get a real Elo against the real field. This is the only honest test. (Needs the owner's approval.)
 2. **Take stale quotes deliberately** at steps 2 and 3 (raise the bid to a rival's resting ask when the estimate says it is cheap). The top agents earn +0.3 to +0.5 per round this way.
-3. **Test spreads by step.** Evidence for a tight final spread is weak (r = -0.19), so test it, do not assume it.
+3. ~~Test spreads by step.~~ Done in section 8: tight step 2 helps, step 3 is flat. Still untested against the real board.
 4. **Step 1 behaviour.** This is where the field first shows its dice.
 5. Use more than mids: bid and ask separately, rivals' position skew, and who traded with whom.
 6. **Fingerprint opponents** in the first rounds and use an archetype-specific decode. Some seats do reveal at step 0 (zeus, MerchTrader).
@@ -105,7 +96,111 @@ These are against weak opponents. Real candidates earn about +0.4 to +1.05 per r
 8. Train a policy in `dicesim.py` against those stronger opponents (the example learned agent only reads its own dice and does not beat the boss).
 9. Late refinement: randomise slightly if rivals profile my quotes from the public replays.
 
-## 8. How to reproduce
+## 8. Opponent harness and spread tuning
+
+The house agents are too weak to test against, so the harness (`dice_market/tourney.py`) now has three opponent families:
+
+| Family | Files | What it is |
+|---|---|---|
+| house | pack | the starter-pack agents |
+| imit | `opponents/imit_*.py` | static linear copies of 9 real agents (8 candidates and house pro), fitted per step from the replays: mid from dice, others' mids, own previous mid and position, plus the agent's real width distribution and step-0 default share |
+| adapt | `opponents/adapt_*.py` | my learning estimator with a real agent's spread widths, hiding habit and position skew |
+
+**Fidelity is limited, and results against these are provisional.**
+- Widths match the real agents closely (e.g. Docsdadi 0.98 vs 0.98 at step 3).
+- The static copies trade about 35% less (1.5 to 2.2 trades per round vs 2.6 to 2.9) and estimate worse at step 3 (about 3.3 vs 2.95).
+- In a table of only copies, the strength order is badly off: yurko_mud, the best real agent, comes last (7% wins vs 69% real) and house pro first. So **results against the static copies are optimistic** (I win about 98% of games against them) and I do not trust them for tuning.
+- The adaptive copies read as well as I do by construction, so they test the quoting policy on equal information, not whether my reading is better than the real agents'.
+
+**Tuning** (coordinate descent on three adaptive mixes, same seeds for every variant, then checked on fresh seeds and on mixes not tuned on):
+
+| Setting (half widths step 0..3, skew) | pro_adapt win | fieldB_adapt win | gate: P(beat boss) | implied P(pass 2 of 3) |
+|---|---|---|---|---|
+| (2, 2, 1.5, 1.5), 0.40 (old v1) | 0.58 | 0.57 | 0.39 | 0.33 |
+| (2, 2, 1.0, 1.5), 0.25 | 0.68 | 0.65 | 0.43 | 0.40 |
+| **(2, 2, 1.0, 1.0), 0.25 (spreads in agent.py)** | 0.65 | 0.64 | 0.47 | 0.45 |
+| (2, 2, 1.0, 0.75), 0.25 | 0.65 | 0.63 | 0.47 | 0.45 |
+
+- **Step 1 wide (half 2.0) matters a lot:** narrowing it to 1.0 cut the win rate from 0.735 to 0.58.
+- **Step 2 tighter (1.0 instead of 1.5) is a real gain** (+0.08 to +0.10 win rate, +0.1 per round) and held on a mix not used for tuning.
+- **Step 3 width is flat** between 0.5 and 1.5 (within noise), and skew barely matters. The earlier idea that a tight final spread is the key is not supported.
+- The gate test mirrors the upload (me, the boss, three example agents). Against the adaptive house-pro copy I beat it about 47% of the time, so the implied chance of passing is about 45%. The real boss is unknown and may be easier or harder.
+- Pool tournament, random tables of the nine adaptive copies plus me (400 tables): me 62.7% win rate (+0.18 per round), strongest copy house pro 59.1% (+0.11). The gap is within noise, so read it as "level or slightly ahead on equal information".
+
+Harness pitfalls fixed: `clean_quote` silently turns an invalid quote into 40 / 44 without logging an error, so the harness now counts those (0 for my agent); scripts that use `ProcessPoolExecutor` need an `if __name__ == "__main__"` guard on macOS.
+
+### What the score is, and how it is measured
+
+The leaderboard score is Elo, which rewards **beating the other seats at the table, not earning the most**. A match is
+10 pairwise games (win 1, draw 0.5) and Elo moves by `K/4 * sum(S - E)`. So the objective is the **pairwise win rate**
+(equivalently the average finishing position), and the harness reports it first, together with **P(finish 1st)**
+(chance is 0.20 at a 5-seat table) and average rank. P&L per round is shown only as a secondary figure. All tuning
+decisions below were made on pairwise win rate. The spread tuning used win rate with P&L as the tiebreak (P(1st) did not exist yet); the lam comparison used win rate and P(1st).
+
+### Interim versions as opponents (`opponents/ver_v0..v4.py`)
+
+Rebuilt from the current code with each version's parameters (the original files no longer exist; their `--check`
+profits reproduce the numbers recorded at the time).
+
+| Version | Change |
+|---|---|
+| v0 | first reader: showed its dice at step 0, house-reader prior, lam 30, half (2,2,1.5,1.5), skew 0.40 |
+| v1 | hides at step 0 |
+| v2 | pooled prior fitted on real matches, lam 100 |
+| v3 | step-2 half width 1.0, skew 0.25 |
+| v4 | step-3 half width 1.0 |
+| **v5 (agent.py)** | **lam 30** |
+
+v5 against four copies of each earlier version (100 matches each; chance P(1st) is 0.20):
+
+| Opponents | Pairwise win | P(1st) | Avg rank |
+|---|---|---|---|
+| 4 x v0 | 0.63 | 0.27 | 2.48 |
+| 4 x v1 | 0.55 | 0.24 | 2.80 |
+| 4 x v2 | 0.75 | 0.46 | 2.01 |
+| 4 x v3 | 0.68 | 0.35 | 2.27 |
+| 4 x v4 | 0.72 | 0.38 | 2.14 |
+| one each of v0, v1, v2, v3 (`ver_all`) | 0.84 | 0.59 | 1.64 |
+| one each of v1, v2, v3, v4 (`ver_old`) | 0.66 | 0.35 | 2.36 |
+
+In a six-agent pool (v0 to v4 plus v5, 400 random tables) v5 is first at an 80% pairwise win rate, ahead of v1 (61%).
+**v1 is the hardest ancestor.** Before the lam change, the agent in v4's form lost to four copies of v1 (win 0.41, P(1st) 0.11).
+
+### The lam finding, and its limits
+
+An ablation switching the prior, lam and spreads one at a time showed **lam was the problem**: lam 100 had been chosen
+from the offline accuracy test (which measures estimation error, not rank), but faster learning wins more.
+Pooled prior with lam 30 vs lam 100: P(1st) 0.54 vs 0.31 on `pro_adapt`, 0.53 vs 0.31 on `fieldB_adapt`, 0.25 vs 0.11
+against v1, unchanged on the gate mix. lam 15 was slightly better still against v1 but less safe on the real recorded
+matches (noisier early estimates), so I kept 30.
+
+**Caveat: part of the margin was the opponents' handicap.** The adaptive copies used lam 100, so they learn slowly.
+Rebuilt with lam 30 (`adapt30_*`), the picture is:
+
+| Opponents (150 matches) | v5 (lam 30) win / P(1st) | v4 (lam 100) win / P(1st) |
+|---|---|---|
+| adaptive copies, lam 100 | 0.82 / 0.55 | 0.64 / 0.31 |
+| adaptive copies, lam 30 (`pro_adapt30`) | 0.62 / 0.29 | 0.40 / 0.15 |
+| gate with a fast boss copy (`gate_adapt30`) | 0.88 / 0.50 | 0.90 / 0.59 |
+
+Against equally fast learners the edge is modest (win rate about 0.61 to 0.62, P(1st) about 0.29 to 0.30). The ordering
+holds (lam 30 beats lam 100), except possibly on the gate mix, where the difference is within noise. The real field's
+learning speed is unknown, so expect the real result to sit somewhere in this range, not at the optimistic end.
+
+**Trade-off on the upload gate.** On identical seeds (300 matches) v5 is slightly worse than v4 on the gate itself:
+P(beat boss) 0.43 vs 0.49 against the slow boss copy and 0.52 vs 0.57 against the fast one (implied pass chance 0.40 vs
+0.48, and 0.53 vs 0.61). So lam 30 buys rank in the competitive mixes and gives up a little on the gate. A failed gate is
+retryable: each attempt uses new seeds and there are 20 uploads a day, so a pass chance of 0.4 to 0.5 per attempt means
+about 2 to 3 uploads. The real boss is unknown.
+
+**Mix sizes.** A table must have 5 seats. After v4 was added, `ver_all` briefly had 5 opponents (a 6-seat game, where no
+dice are hidden); `run()` now asserts that every mix has exactly 4 opponents.
+
+**Robustness checks.** No exceptions in any run. About one timeout (a call over 0.05 s) per 900 matches, with ten
+workers sharing the CPU, which looks like scheduling noise; a gate attempt requires zero slow answers, so a rare
+failure on that ground is possible and retryable. `agent.py` uses no imports and none of the names the upload scan refuses.
+
+## 9. How to reproduce
 
 ```
 cd dice_market
@@ -115,6 +210,16 @@ python3 tourney.py agent.py                 # local tournaments against the hous
 python3 analysis/passive.py agent.py 150    # estimation error on recorded real matches
 python3 analysis/profile.py data/replays.jsonl.gz data/profile.json 8   # per-agent statistics
 python3 analysis/charts.py ../docs/data/profile.json ../docs/figures    # the figures above
+python3 analysis/fit_opponents.py data/replays.jsonl.gz opponents/fits.json 3   # fit the imitation agents
+python3 analysis/make_opponents.py opponents/fits.json opponents                 # write opponents/imit_*.py
+python3 analysis/make_adaptive.py opponents/fits.json agent.py opponents         # write opponents/adapt_*.py
+python3 analysis/validate_opponents.py data/profile.json 200                     # fidelity of the copies
+python3 tourney.py agent.py                 # suite, incl. gate and pool: --pool adapt -n 400
+python3 analysis/tune_spreads.py agent.py 80 2     # tune half widths and skew
+python3 analysis/compare_variants.py agent.py 150  # compare settings on held-out mixes
+python3 analysis/make_versions.py agent.py opponents      # rebuild the interim versions v0..v4
+python3 analysis/ablate.py agent.py 150     # switch prior / lam / spreads one at a time
+python3 analysis/make_adaptive.py opponents/fits.json agent.py opponents 30 adapt30  # fast-learning copies
 ```
 
 The API token is stored in the macOS Keychain (service name `dice_token`), never in this repo. Load it with
