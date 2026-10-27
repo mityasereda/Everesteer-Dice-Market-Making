@@ -39,7 +39,7 @@ The best candidates win about 2 of 3 pairwise games, on only +0.4 to +1.05 per r
 
 ![Step 0 hiding](figures/2_step0_hiding.png)
 
-**Nearly everyone hides at step 0** by sending exactly the forced quote 40 / 44. Exceptions: zeus (56%), MerchTrader (51%), spivak (70%). The house reader shows its dice at step 0 in 83% of rounds and loses badly.
+**Nearly everyone hid at step 0 (23-26 Oct)** by sending exactly the forced quote 40 / 44. **This reversed on 27 Oct**: the share of default quotes fell from 95% (24 Oct) to 37% by midday on the 27th, see section 9. Exceptions: zeus (56%), MerchTrader (51%), spivak (70%). The house reader shows its dice at step 0 in 83% of rounds and loses badly.
 
 ![Estimation error](figures/3_estimation_error.png)
 
@@ -230,7 +230,36 @@ trusting any local result, and check the live leaderboard early.
 recent matches and speed up learning (for example one shared weight per step on the others' summed mids instead of four
 separate ones); (3) refit the opponent copies on the new field.
 
-## 10. How to reproduce
+## 10. Version 6 (built 27 Oct 2026, not yet uploaded)
+
+**Changes from v5** (`dice_market/agent.py`):
+1. **Step 0 is quoted informed:** centre 42 + 1.5 x (dice - 7), width 4 (`hide0=False`, `step0_k`, `step0_w`).
+2. **Prior refitted** on 2,200 real matches from 27 Oct (`analysis/fit_prior.py`): step 1 (1.00, [0.57]), step 2 (0.55, [0.05, 0.19]), step 3 (0.30, [0.10, -0.06, 0.26]). The held-out error of the fixed prior alone fell to 4.31 / 3.86 / 3.19 at steps 1 / 2 / 3 (4.98 / 4.32 / 3.26 on the earlier field), because step-0 mids now carry information.
+3. **lam 100 instead of 30.** On held-out real matches, lam 100 is at least as accurate as 30 in every phase of a match and clearly better early. Rounds 0-29 / 30-99 / 100-199 at step 3: lam 30 = 3.97 / 3.11 / 2.92, lam 100 = 3.79 / 3.09 / 2.92, lam 300 = 3.67 / 3.09 / 2.94, no learning = 3.46 / 3.18 / 3.12. This reverses the v5 choice, which came from simulations against copies built on my own estimator.
+4. A switchable learning structure (`mode`: per-seat as in v5, shared, or both). It made no accuracy difference, so the default is "both" with strong per-seat shrinkage (`lam_seat=300`). `mode="seat"` with the old prior reproduces v5 quotes exactly (checked).
+
+**Backtest on 768 matches played after every fit (15:11-16:43 UTC), estimation RMSE by phase 0-29 / 30-99 / 100-199:**
+
+| | Step 2 | Step 3 |
+|---|---|---|
+| v5 | 4.25 / 3.58 / 3.42 | 4.02 / 3.15 / 2.92 |
+| v6 | 3.97 / 3.54 / 3.43 | 3.79 / 3.08 / 2.92 |
+
+Step-0 quote edge on the same unseen matches, by number of rivals who hide (0-1 / 2 / 3-4): default 40/44 -1.19 / -0.60 / -0.01; v6 quote +0.10 / +0.47 / +0.60; plain fair value (k=1) -0.22 / +0.23 / +0.67. Weighted by the actual mix (65% / 25% / 10%): -0.92 for the default, +0.25 for v6.
+
+**Whole-round evidence from real play** (2.5 million candidate seat-rounds since 06:00 UTC on 27 Oct): seats that quote informed earn +0.24 / +0.63 / +0.81 per round with 0-1 / 2 / 3-4 hiders among their rivals; seats that hide earn -0.90 / -0.53 / -0.05. Informed is ahead in every cell by +0.9 to +1.2, and its later-step edge is about zero even against many hiders, so revealing first is not punished in the real field. Same-agent comparison (12 agents that played both styles, 12+ matches each): informed minus hiding is +0.385 P&L per round and +0.153 pairwise win rate. Skill still confounds the first table (stronger authors tend to be the informed ones); the second controls for the author but not for version changes.
+
+**Why the local simulations cannot judge this.** The new-field copies (`rimit_*` static, `adaptr_*` adaptive; fitted on 27 Oct, `analysis/fit_opponents.py`, `make_opponents.py`, `make_adaptive.py`) reproduce the step-0 leak (v5 loses about 1.0 there against them, 0.58 on the real board) but are far too easy at steps 1 to 3: v5 earns +1.2 per round there against them, +0.28 on the real board, because the copies lack the real agents' skill at picking off stale quotes. Consequences:
+- Against four identical copies of v5 (hiders who read step-0 mids), **every informed variant loses every game** (pairwise win 0.00, -1.7 to -2.3 per round), because I reveal first and they reveal one step later. The real field does not behave like that (see the whole-round table).
+- Against copies of the current leaders (who lean about 1.6), a bigger lean wins an arms race: pairwise win 0.62 / 0.70 at k=1.75 against 0.53 / 0.62 at k=1.5 on radA / radB, and plain fair value (k=1.0) is beaten badly (0.12 / 0.14). On the real recorded step-0 data k=1.5 to 2 are equal (+0.15 to +0.18 with 0-1 hiders) and 1.5 is better with hiders at the table, so k stays 1.5.
+- v6 against the frozen v5 and `radC` is worse than v5 in simulation for the same reason; I am not treating those numbers as evidence either way.
+- The upload gate against a hiding boss copy is much better for v6 (P(beat boss) 0.87 against 0.53 for v5 on `gate_rad`).
+
+**Open risk:** if the field turns out to be mostly hiders who read my step-0 quote, v6 could lose at steps 1 to 3. Real data shows the opposite, and the field's hider share fell from 95% to about 37% in three days, but it keeps moving. Check the board after about 10 matches and compare step 0 and steps 1 to 3 with `analysis/my_matches.py`.
+
+**Checks:** `--check` passes; a full 200-round match has zero errors and timeouts; `agent.py` is 6.4 KB with no imports and none of the names the upload scan refuses.
+
+## 11. How to reproduce
 
 ```
 cd dice_market
@@ -240,6 +269,11 @@ python3 tourney.py agent.py                 # local tournaments against the hous
 python3 analysis/passive.py agent.py 150    # estimation error on recorded real matches
 python3 analysis/profile.py data/replays.jsonl.gz data/profile.json 8   # per-agent statistics
 python3 analysis/charts.py ../docs/data/profile.json ../docs/figures    # the figures above
+python3 analysis/make_recent.py 2026-10-27T06:00:00 data/recent_tight.jsonl.gz data/replays.jsonl.gz data/new.jsonl.gz data/new2.jsonl.gz   # recent window
+python3 analysis/fit_prior.py data/recent_tight.jsonl.gz 2   # refit PRIOR
+python3 analysis/passive.py agent.py data/new3.jsonl.gz 3 0   # estimation backtest on unseen matches
+python3 analysis/step0_by_field.py data/new3.jsonl.gz        # step-0 quote edge by number of hiders
+python3 analysis/step0_lean.py agent.py 100                  # lean of the step-0 quote across opponent populations
 python3 dmapi.py --json matches --mine > data/mine.json   # then `dmapi.py replay <id> -o data/mine/<id>.json` for each id
 python3 analysis/my_matches.py                  # where my real matches lose money
 python3 analysis/step0_counterfactual.py data/new.jsonl.gz 660   # step-0 quote alternatives vs recorded rivals

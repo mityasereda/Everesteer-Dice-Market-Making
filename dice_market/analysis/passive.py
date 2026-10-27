@@ -1,35 +1,39 @@
 """Score an agent's value estimate on recorded real matches, as a passive observer.
 
-    python3 analysis/passive.py agent.py [sample_every=150]
-For each sampled match and each seat, the agent sees the real dice and the real quotes of the other seats and
-reports its estimate at each step. Reports RMSE vs the true value by step, early rounds (<30) vs later.
-Opponents did not react to this agent, so this measures estimation accuracy, not profit.
+    python3 analysis/passive.py agent.py [data=data/recent_tight.jsonl.gz] [every=12] [offset=6]
+Takes every `every`-th match (those with index % every == offset), feeds the agent each seat's real dice and the other
+seats' real quotes, and reports RMSE of its estimate against the true value, by step, for rounds < 30 and >= 30.
+The prior in agent.py was fitted on matches with index % 4 == 0 of the same file (see fit_prior.py), so offset 6 with
+every 12 (index % 4 == 2) is held out. Opponents did not react to this agent: this measures estimation, not profit.
 """
-import gzip, importlib.util, json, sys
+import gzip
+import importlib.util
+import json
+import sys
 from concurrent.futures import ProcessPoolExecutor
 
 AGENT = sys.argv[1]
-EVERY = int(sys.argv[2]) if len(sys.argv) > 2 else 150
-MODES = {f"lam {l}": dict(prior="keep", lam=float(l)) for l in (30, 50, 100)}
-
-
-def load():
-    spec = importlib.util.spec_from_file_location("cand", AGENT)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+DATA = sys.argv[2] if len(sys.argv) > 2 else "data/recent_tight.jsonl.gz"
+EVERY = int(sys.argv[3]) if len(sys.argv) > 3 else 12
+OFFSET = int(sys.argv[4]) if len(sys.argv) > 4 else 6
+OLD_PRIOR = {0: (1.0, []), 1: (1.0, [0.72]), 2: (0.75, [-0.16, 0.26]), 3: (0.26, [0.05, -0.03, 0.26])}
+MODES = {"as is": {}}   # use the agent file exactly as it is (no parameter overrides)
 
 
 def one(args):
     line, mode = args
-    cfg = MODES[mode]
+    cfg = dict(MODES[mode])
     m = json.loads(line)
-    mod = load()
-    if cfg["prior"] is None:
-        mod.PRIOR = None
-    mod.PARAMS["lam"] = cfg["lam"]
+    spec = importlib.util.spec_from_file_location("cand", AGENT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    if cfg.pop("prior", "new") == "old":
+        mod.PRIOR = OLD_PRIOR
+    mod.PARAMS.update(cfg)
     out = {}
     for i in range(5):
+        if m["kinds"][i] == "house":
+            continue
         ag = mod.Agent(i, 5)
         for ri, r in enumerate(m["rounds"]):
             d, v = r["d"], r["v"]
@@ -37,8 +41,7 @@ def one(args):
             hist = []
             for s, st in enumerate(r["st"]):
                 e = ag.estimate(s, hist)
-                k = (s, 0 if ri < 30 else 1)
-                a = out.setdefault(k, [0.0, 0])
+                a = out.setdefault((s, 0 if ri < 30 else 1 if ri < 100 else 2), [0.0, 0])
                 a[0] += (v - e) ** 2
                 a[1] += 1
                 hist.append({"sent": {j: (b / 2.0, a_ / 2.0) for j, (b, a_) in enumerate(st["s"])}, "quotes": {},
@@ -49,18 +52,18 @@ def one(args):
 
 
 if __name__ == "__main__":
-    lines, n = [], 0
-    with gzip.open("data/replays.jsonl.gz", "rt") as f:
-        for line in f:
-            n += 1
-            if n % EVERY == 0:
+    lines = []
+    with gzip.open(DATA, "rt") as f:
+        for n, line in enumerate(f):
+            if n % EVERY == OFFSET:
                 lines.append(line)
-    print("sampled matches:", len(lines))
+    print("held-out matches:", len(lines), "from", DATA)
+    print(f"{'design':38s}   RMSE by step, rounds 0-29 / 30-99 / 100-199")
     with ProcessPoolExecutor() as pool:
         for mode in MODES:
             tot = {}
             for out in pool.map(one, [(l, mode) for l in lines], chunksize=4):
                 for k, (se, c) in out.items():
                     a = tot.setdefault(k, [0.0, 0]); a[0] += se; a[1] += c
-            row = "  ".join(f"s{s}: {(tot[(s,0)][0]/tot[(s,0)][1])**.5:4.2f}/{(tot[(s,1)][0]/tot[(s,1)][1])**.5:4.2f}" for s in range(4))
-            print(f"{mode:22s} RMSE early/later  {row}")
+            row = "  ".join(f"s{s}: " + "/".join(f"{(tot[(s, b)][0] / tot[(s, b)][1]) ** .5:4.2f}" for b in range(3)) for s in range(2, 4))
+            print(f"{mode:38s} {row}", flush=True)

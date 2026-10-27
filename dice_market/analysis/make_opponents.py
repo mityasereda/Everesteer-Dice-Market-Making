@@ -1,6 +1,6 @@
 """Write one imitation agent file per fitted real agent: opponents/imit_<name>.py
 
-    python3 analysis/make_opponents.py opponents/fits.json opponents
+    python3 analysis/make_opponents.py opponents/fits.json opponents [prefix=imit]
 
 Each file replays the fit of analysis/fit_opponents.py: the quote mid is the fitted linear function of the agent's
 dice, the others' mids at earlier steps, its own previous mid and its position. Mids are deterministic (no injected
@@ -9,12 +9,10 @@ Spread widths and the step-0 default 40 / 44 are drawn from the real agent's dis
 exactly two draws per quote call, so variants of my agent are compared on identical opponent behaviour.
 """
 import json
+import re
 import sys
 from pathlib import Path
 
-NAMES = {"Docsdadi": "docsdadi", "zudvarnoki": "zudvarnoki", "MPP": "mpp", "billhwang": "billhwang",
-         "momarci13": "momarci13", "yurko_mud": "yurko", "Joshua_Karat": "joshua", "leobgg": "leobgg",
-         "house pro": "housepro"}
 
 TEMPLATE = '''"""Imitation of "{label}" fitted from the replay dataset (analysis/fit_opponents.py). Do not edit by hand.
 
@@ -65,7 +63,11 @@ class Agent:
 
 fits = json.load(open(sys.argv[1]))
 out = Path(sys.argv[2])
+prefix = sys.argv[3] if len(sys.argv) > 3 else "imit"
 out.mkdir(parents=True, exist_ok=True)
-for label, short in NAMES.items():
-    (out / f"imit_{short}.py").write_text(TEMPLATE.format(label=label, fit=json.dumps(fits[label])))
-print("wrote", ", ".join(f"imit_{s}.py" for s in NAMES.values()))
+names = []
+for label in fits:
+    short = re.sub(r"\W+", "", label.lower())
+    (out / f"{prefix}_{short}.py").write_text(TEMPLATE.format(label=label, fit=json.dumps(fits[label])))
+    names.append(f"{prefix}_{short}.py")
+print("wrote", ", ".join(names))

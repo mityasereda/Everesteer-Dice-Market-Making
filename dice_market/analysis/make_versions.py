@@ -9,7 +9,7 @@ parameters (the learning maths is the same; the first version also used numpy fo
   v2  v1 with the pooled prior fitted on real matches and lam 100
   v3  v2 with the step-2 half width 1.0 and skew 0.25
   v4  v3 with the step-3 half width 1.0
-The current agent.py (v5) differs from v4 only by lam 30 instead of 100.
+  v5  v4 with lam 30 (uploaded 27 Oct; Elo 1042 after 30 matches)
 """
 import re
 import sys
@@ -21,6 +21,7 @@ VERSIONS = {
     "v2": dict(half=(2.0, 2.0, 1.5, 1.5), skew=0.40, lam=100.0, hide0=True, prior=True),
     "v3": dict(half=(2.0, 2.0, 1.0, 1.5), skew=0.25, lam=100.0, hide0=True, prior=True),
     "v4": dict(half=(2.0, 2.0, 1.0, 1.0), skew=0.25, lam=100.0, hide0=True, prior=True),
+    "v5": dict(half=(2.0, 2.0, 1.0, 1.0), skew=0.25, lam=30.0, hide0=True, prior=True),   # the version uploaded on 27 Oct
 }
 src = Path(sys.argv[1]).read_text()
 out = Path(sys.argv[2])

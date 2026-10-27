@@ -35,11 +35,9 @@ FILES = {
     "house_reader": "house/house_reader.py",
     "house_hider": "house/house_hider.py",
 }
-for _s in SHORT:
-    FILES[f"imit_{_s}"] = f"opponents/imit_{_s}.py"
-    FILES[f"adapt_{_s}"] = f"opponents/adapt_{_s}.py"
-    FILES[f"adapt30_{_s}"] = f"opponents/adapt30_{_s}.py"   # adaptive copies that learn fast (lam 30) like my agent
-VERSIONS = ["v0", "v1", "v2", "v3", "v4"]   # interim versions of my own agent, opponents/ver_*.py (analysis/make_versions.py)
+for _f in sorted((ROOT / "opponents").glob("*.py")):   # every generated opponent file is available by its stem
+    FILES[_f.stem] = f"opponents/{_f.name}"
+VERSIONS = ["v0", "v1", "v2", "v3", "v4", "v5"]   # interim versions of my own agent, opponents/ver_*.py (analysis/make_versions.py)
 for _v in VERSIONS:
     FILES[f"ver_{_v}"] = f"opponents/ver_{_v}.py"
 A, B = ["docsdadi", "zudvarnoki", "mpp", "billhwang"], ["momarci13", "yurko", "joshua", "leobgg"]
@@ -64,6 +62,14 @@ MIXES = {
     "ver_all": [f"ver_{v}" for v in ("v0", "v1", "v2", "v3")],
     **{f"vs_{v}": [f"ver_{v}"] * 4 for v in VERSIONS},
     "ver_and_field": ["ver_v1", "ver_v3", "adapt_housepro", "adapt_zudvarnoki"],
+    "rA_imit": ["rimit_zeus", "rimit_zudvarnoki", "rimit_bruno", "rimit_gyurmatag"],
+    "rB_imit": ["rimit_yurko_mud", "rimit_hegemonia", "rimit_jk007", "rimit_kart7"],
+    "rC_imit": ["rimit_sk1", "rimit_marco_milanesi_", "rimit_housepro", "rimit_zeus"],
+    "gate_rimit": ["rimit_housepro", "fair_value", "wide", "random"],
+    "radA": ["adaptr_zeus", "adaptr_zudvarnoki", "adaptr_bruno", "adaptr_gyurmatag"],
+    "radB": ["adaptr_yurko_mud", "adaptr_hegemonia", "adaptr_jk007", "adaptr_kart7"],
+    "radC": ["adaptr_sk1", "adaptr_marco_milanesi_", "adaptr_housepro", "adaptr_zeus"],
+    "gate_rad": ["adaptr_housepro", "fair_value", "wide", "random"],
     "ver_old": [f"ver_{v}" for v in ("v1", "v2", "v3", "v4")],
 }
 SUITE = ["weak", "readers", "hard", "gate_imit", "gate_adapt", "fieldA_imit", "fieldB_imit", "fieldA_adapt", "fieldB_adapt",
@@ -71,6 +77,10 @@ SUITE = ["weak", "readers", "hard", "gate_imit", "gate_adapt", "fieldA_imit", "f
 
 
 POOLS = {"imit": [f"imit_{s}" for s in SHORT], "adapt": [f"adapt_{s}" for s in SHORT], "ver": [f"ver_{v}" for v in VERSIONS],
+         "rimit": ["rimit_zeus", "rimit_zudvarnoki", "rimit_bruno", "rimit_gyurmatag", "rimit_yurko_mud", "rimit_hegemonia",
+                  "rimit_jk007", "rimit_kart7", "rimit_sk1", "rimit_marco_milanesi_", "rimit_housepro"],
+         "radapt": [n.replace("rimit_", "adaptr_") for n in ["rimit_zeus", "rimit_zudvarnoki", "rimit_bruno", "rimit_gyurmatag", "rimit_yurko_mud",
+                   "rimit_hegemonia", "rimit_jk007", "rimit_kart7", "rimit_sk1", "rimit_marco_milanesi_", "rimit_housepro"]],
          "all": [f"adapt_{s}" for s in SHORT] + [f"ver_{v}" for v in VERSIONS]}
 
 
@@ -180,7 +190,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("agent")
     ap.add_argument("--mix", default="suite")
-    ap.add_argument("--pool", choices=["imit", "adapt", "ver", "all"])
+    ap.add_argument("--pool", choices=["imit", "adapt", "ver", "rimit", "radapt", "all"])
     ap.add_argument("-n", type=int, default=60)
     ap.add_argument("--rounds", type=int, default=200)
     ap.add_argument("--seed", type=int, default=1000)

@@ -1,22 +1,22 @@
 # Interim version v1 of my agent, rebuilt from agent.py by analysis/make_versions.py.
-"""Dice market agent v1: an adaptive reader.
+"""Dice market agent v5: an adaptive reader.
 
 Idea: the value is the sum of 12 dice and I see 2. The other seats' quotes carry information about the dice I
 cannot see. At every step I estimate the value as a linear function of my own dice and the mids the other seats
-sent in earlier steps. The weights start at the "house reader" rule (read each seat's step-0 mid as its dice) and
-are refined during the match by ridge regression: after every round I learn the true value, so I can check how
-well each seat's quotes predicted it and re-weight them.
+sent in earlier steps. The weights start at PRIOR (a fit on real leaderboard matches) and are refined during the
+match by ridge regression: after every round I learn the true value, so I can check how well each seat's quotes
+predicted it and re-weight them. The ridge strength (lam) is how many rounds of belief the prior is worth.
 
-Quote = estimate -/+ half width, shifted against my position so inventory is worked off.
+Step 0 shows nothing (the default quote 40 / 44). At steps 1 to 3 the quote is the estimate -/+ a half width, shifted
+against my position so inventory is worked off. Pure Python, about 0.1 ms per call.
 """
-WEIGHTS = None
 MEAN = 42.0
 CLIP0, CLIP = 5.0, 15.0     # a step-0 mid says at most +-5 about a pair of dice; later mids can say more
 PARAMS = dict(
     half=(2.0, 2.0, 1.5, 1.5),   # half width of my quote, by step (tuned on adaptive copies of real agents)
     skew=0.40,                   # price shift per unit of position
-    lam=30.0,                   # ridge strength towards the reader weights, in rounds
-    hide0=True,                # step 0: quote 40 / 44 so my first quote shows nothing of my dice
+    lam=30.0,                    # ridge strength towards the prior weights, in rounds (30 beat 100 on rank in every mix)
+    hide0=True,                  # step 0: quote 40 / 44 so my first quote shows nothing of my dice
 )
 # Starting weights per step: (weight on my dice, weight on each other seat's mid at step 0, 1, ...). They are the
 # pooled least-squares fit on 14,000 real leaderboard matches. The field hides at step 0, so step-0 mids say little.
@@ -51,8 +51,6 @@ class Agent:
             self.w.append(list(w0))
             self.P.append([[1.0 / self.p["lam"] if i == j else 0.0 for j in range(d)] for i in range(d)])
             self.b.append([0.0] * d)
-        self.var = [29.2, 9.0, 8.0, 7.0]                  # running squared error of the estimate, by step
-        self.count = [0, 0, 0, 0]
 
     def new_round(self, round_no, my_dice):
         self.own = float(sum(my_dice.values()))
@@ -88,10 +86,6 @@ class Agent:
         hist = result["history"]
         for s in range(4):
             x = self.feats(s, hist)
-            err = y - _dot(self.w[s], x)
-            self.count[s] += 1
-            a = 1.0 / min(self.count[s] + 10, 80)
-            self.var[s] = (1 - a) * self.var[s] + a * err * err
             P, b = self.P[s], self.b[s]
             px = [_dot(row, x) for row in P]               # Sherman-Morrison: P <- P - (Px)(Px)' / (1 + x'Px)
             den = 1.0 + _dot(x, px)

@@ -1,6 +1,6 @@
 """Fit imitation models of real agents from the replay dataset.
 
-    python3 analysis/fit_opponents.py data/replays.jsonl.gz opponents/fits.json [every=3]
+    python3 analysis/fit_opponents.py data/replays.jsonl.gz opponents/fits.json [every=3] [label1,label2,...]
 
 For each chosen agent label and step s, regress the agent's quote mid (minus 42) on what it could see:
   1, its dice sum - 7, the others' summed mids at each earlier step, its own previous mid, its position.
@@ -17,7 +17,7 @@ import numpy as np
 
 path, out = sys.argv[1], sys.argv[2]
 EVERY = int(sys.argv[3]) if len(sys.argv) > 3 else 3
-LABELS = ["Docsdadi", "zudvarnoki", "MPP", "billhwang", "momarci13", "yurko_mud", "Joshua_Karat", "leobgg", "house pro"]
+LABELS = sys.argv[4].split(",") if len(sys.argv) > 4 else ["Docsdadi", "zudvarnoki", "MPP", "billhwang", "momarci13", "yurko_mud", "Joshua_Karat", "leobgg", "house pro"]
 RIDGE = 1e-3
 
 
