@@ -230,7 +230,7 @@ trusting any local result, and check the live leaderboard early.
 recent matches and speed up learning (for example one shared weight per step on the others' summed mids instead of four
 separate ones); (3) refit the opponent copies on the new field.
 
-## 10. Version 6 (built 27 Oct 2026, not yet uploaded)
+## 10. Version 6 (built 27 Oct 2026, uploaded 22:33 UTC the same day)
 
 **Changes from v5** (`dice_market/agent.py`):
 1. **Step 0 is quoted informed:** centre 42 + 1.5 x (dice - 7), width 4 (`hide0=False`, `step0_k`, `step0_w`).
@@ -260,6 +260,8 @@ Step-0 quote edge on the same unseen matches, by number of rivals who hide (0-1 
 **After an upload:** filter `data/mine` by upload time so v5 and v6 replays do not mix, and reproduce v5 matches with `opponents/ver_v5.py`, not `agent.py`. After 10 to 15 v6 matches check step 0 and steps 1 to 3 separately. **Rollback trigger:** step 0 clearly positive but steps 1 to 3 around -0.3 per round or worse means the cost of revealing first is real and v6 should be reconsidered; `dmapi.py activate 24f4d3` restores v5.
 
 **Open risk:** if the field turns out to be mostly hiders who read my step-0 quote, v6 could lose at steps 1 to 3. Real data shows the opposite, and the field's hider share fell from 95% to about 37% in three days, but it keeps moving. Check the board after about 10 matches and compare step 0 and steps 1 to 3 with `analysis/my_matches.py`.
+
+**Upload record:** v6 uploaded as "informed step0 v6", version id `400a1f`, at 2026-10-27T22:33:26Z (saved in `dice_market/data/v6_upload_time.txt`, git-ignored). It passed the boss gate 3 of 3 (+6.55 / +5.81 / +6.07 per round vs the boss +3.15 / +3.00 / +2.92) and is the active version. v5 (`24f4d3`) had climbed to Elo 1113 after 192 matches by then (it was 1050 after 73), so it remains the rollback target: `dmapi.py activate 24f4d3`. Matches before the upload time belong to v5, after it to v6.
 
 **Checks:** `--check` passes; a full 200-round match has zero errors and timeouts; `agent.py` is 6.4 KB with no imports and none of the names the upload scan refuses.
 
