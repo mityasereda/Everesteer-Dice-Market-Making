@@ -1,6 +1,6 @@
 """Fit the agent's starting weights (PRIOR) on recent real matches.
 
-    python3 analysis/fit_prior.py data/recent_tight.jsonl.gz [every=2] [informed]
+    python3 analysis/fit_prior.py data/recent_tight.jsonl.gz [every=2] [informed] [clip0=5]
 For each step s, OLS of V - 42 on: my dice sum - 7 and, for each earlier step t, the SUM over the other four seats of
 (mid - 42), clipped like the agent (+-5 at step 0, +-15 later). Train on even-numbered matches, test on odd ones.
 Candidate seats only. Prints the PRIOR line for agent.py.
@@ -13,7 +13,7 @@ import numpy as np
 
 path, EVERY = sys.argv[1], int(sys.argv[2]) if len(sys.argv) > 2 else 2
 INFORMED = len(sys.argv) > 3 and sys.argv[3] == "informed"   # keep only seat-rounds whose own step-0 quote was NOT 40 / 44
-CLIP0, CLIP = 5.0, 15.0
+CLIP0, CLIP = (float(sys.argv[4]) if len(sys.argv) > 4 else 5.0), 15.0   # optional 4th argument: step-0 clip (the agent used 5; today's pushes need 9)
 acc = {s: [0, 0, 0, 0] for s in range(1, 4)}
 test = {s: [] for s in range(1, 4)}
 n = 0

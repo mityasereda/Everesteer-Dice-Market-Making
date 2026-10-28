@@ -363,7 +363,19 @@ Among informed agents the step-0 edge is nearly the same in every tier (+0.14 to
 
 **Caveats.** One morning's data (10.5 hours); versions change; the tier means are weighted by rounds; coefficients from the regressions are descriptive; the step-1 pick-off part of the replay holds rivals' step-1 quotes fixed, and what revealing costs later cannot be measured offline.
 
-## 14. How to reproduce
+## 14. Version 8: the field's three-level step-0 quote (built 28 Oct 2026, not yet uploaded)
+
+**What changed from v7** (`dice_market/agent.py`; the frozen v7 is `dice_market/data/agent_v7_frozen.py`, git-ignored): (1) step 0 quotes three levels: dice sum below 7 -> mid 36 (34 / 38), exactly 7 -> 40 / 44, above 7 -> mid 48 (46 / 50), width 4 (`step0_levels=6.0`, `hide0=False`); (2) the clip on rivals' step-0 mids is a parameter, `clip0=3.0` (it was 5.0; the field's pushes run from 4 to 9, and held-out step-1 RMSE on 28 Oct informed seat-rounds was 4.08 at clip 3, 4.09 at 4, 4.11 at 5, 4.20 at 9 and 4.22 at 12); (3) the prior is refitted on 28 Oct informed seat-rounds at that clip: `{1: (1.0, [0.74]), 2: (0.30, [0.08, 0.21]), 3: (0.28, [0.18, -0.07, 0.26])}` (v7: `{1: (1.0, [0.72]), 2: (0.75, [-0.16, 0.26]), 3: (0.26, [...])}`, whose step-2 weight on my own dice, 0.75, assumed rivals did not yet know them); (4) `lam=100` (was 30). Everything else is v7: half widths (2, 2, 2, 1), skew 0.25, take margins (None, .5, .25, .25). With the old settings (`hide0=True, lam=30, clip0=5`, old prior) it quotes identically to v7 (max difference 0 over 30 random matches).
+
+**Replay on 28 Oct** (`analysis/v8_experiment.py`: 2,390 candidate seat-matches spread over the day, 478,000 rounds; every seat plays my agent against the rivals' recorded quotes; exact at step 0, approximate later; revealing costs are NOT included): edge per round, v7 -0.95 (step 0 -0.63, steps 1 to 3 -0.33) against **v8 +0.29** (step 0 +0.40, steps 1 to 3 -0.11), a gain of **+1.24 +- 0.015** over v7. Push P=5 +0.23, **6 +0.29**, 6.5 +0.24, 7 +0.14, 8 -0.05 (the exact step-0 search in section 13 also picked 6). Smooth lean k=2 +0.12; v8 with lam 30 +0.23, with the old prior and clip 5 +0.23, clip 5 with its own prior +0.26, without the take logic +0.19. The later-step settings are already about best for an informed agent (`analysis/v8_tune.py`, 1,200 seat-matches, vs the defaults): half step 3 = 1.5 +0.010, skew 0.10 +0.013, take .5/.5/.5 +0.015, all within tuning noise, so they stay; half widths narrower, skew 0.5 or 1.0 (-0.06, -0.31) and lam 30 (-0.06) are worse; lam 300 equal.
+
+**What the replay cannot say.** Rivals do not react to my revealed sign here, so the +1.24 is an upper bound for step 0 and the cost at steps 1 to 3 is missing. Two reference points: v6 (smooth lean) lost 1.35 there against the strongest opponents, and the cross-section of ranks 15 to 25 against me suggests about 0.9 (section 13). The expected net gain is therefore somewhere between about 0 and +0.4 per round; a live test is the only measurement.
+
+**Checks:** `--check` passes (+4.91 per round, 0 errors, 0 timeouts); 16,000 random quotes against grid-priced rival quotes, none changed by the engine; slowest call 0.02 ms; 8.9 KB, no imports, none of the scan's forbidden words; a full 200-round local match against fitted copies: 0 errors, 0 timeouts (local copies are not evidence of strength).
+
+**How to judge v8 once uploaded** (placement burst of about 25 matches against the strongest opponents): compare with v7's FIRST 25 matches (rank 3.84, win 0.290, P&L -0.46; step 0 -0.74, steps 1 to 3 +0.27) using `analysis/compare_versions.py` with the v8 upload time. Step 0 should rise by about +1 (replay: +1.0); the question is how much steps 1 to 3 fall (v6 fell by 1.35). Roll back to v7 with `dmapi.py activate 3be28a` if v8's first 25 matches are clearly worse than v7's in rank and win rate; v8 breaks even if steps 1 to 3 fall by less than the step-0 gain.
+
+## 15. How to reproduce
 
 ```
 cd dice_market
@@ -398,6 +410,9 @@ python3 analysis/midpack_pairs.py data/day28.jsonl.gz data/midpack.json data/mid
 python3 analysis/midpack_step0.py data/day28.jsonl.gz data/midpack.json data/midpack_step0.json  # step-0 quote curves
 python3 analysis/step0_levels.py data/day28.jsonl.gz 1000 8 5 | tee data/step0_levels.txt      # step-0 families, exact at step 0
 python3 analysis/midpack_charts.py data ../docs/figures                                      # figure 6
+python3 analysis/fit_prior.py data/day28.jsonl.gz 2 informed 3     # v8 prior (4th argument = step-0 clip)
+python3 analysis/v8_experiment.py 2500 10                          # v8 variants replayed on 28 Oct matches
+python3 analysis/v8_tune.py 1200 10                                # v8 widths, skew, take margins, lam
 python3 tourney.py agent.py                 # suite, incl. gate and pool: --pool adapt -n 400
 python3 analysis/tune_spreads.py agent.py 80 2     # tune half widths and skew
 python3 analysis/compare_variants.py agent.py 150  # compare settings on held-out mixes

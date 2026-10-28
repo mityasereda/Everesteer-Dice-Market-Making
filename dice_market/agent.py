@@ -1,4 +1,4 @@
-"""Dice market agent v7: an adaptive reader that hides at step 0, quotes wide early and takes stale quotes.
+"""Dice market agent v8: an adaptive reader that quotes the field's three-level step 0, quotes wide early and takes stale quotes.
 
 Idea: the value is the sum of 12 dice and I see 2. The other seats' quotes carry information about the dice I
 cannot see. At every step I estimate the value as a linear function of my own dice and the mids the other seats
@@ -6,32 +6,37 @@ sent in earlier steps. The weights start at PRIOR (a fit on real leaderboard mat
 match by ridge regression: after every round I learn the true value, so I can check how well each seat's quotes
 predicted it and re-weight them. The ridge strength (lam) is how many rounds of belief the prior is worth.
 
-Step 0: by default the quote is 40 / 44 (hide0) so rivals learn nothing about my dice; informed quoting (hide0=False)
-was tried as v6 and lost, because revealing my dice erased my step-1 information edge. At steps 1 to 3 the quote is the
+Step 0 (v8): the quote has three levels like the agents ranked 15 to 40: dice sum below 7 -> mid 42 - P, above 7 -> mid
+42 + P, exactly 7 -> 40 / 44, width 4, with P = 6 (a far quote wins priority in the engine's cross phase; the default
+40 / 44 lost 1.2 per round at steps 0 to 1 on 28 Oct). v7 hid at step 0 (hide0=True); v6's smooth lean (step0_levels=None)
+revealed everything and lost at steps 1 to 3. At steps 1 to 3 the quote is the
 estimate -/+ a half width, shifted against my position so inventory is worked off. Optional take logic: if a rival's
 resting quote is stale against my estimate by more than a margin, my quote is moved to meet it, so I trade at its price.
 Pure Python, about 0.1 ms per call.
 """
 MEAN = 42.0
-CLIP0, CLIP = 5.0, 15.0     # a step-0 mid says at most +-5 about a pair of dice; later mids can say more
+CLIP = 15.0                 # later mids can say more about the dice than step-0 mids (clipped at PARAMS["clip0"])
 PARAMS = dict(
     half=(2.0, 2.0, 2.0, 1.0),   # half width of my quote, by step: wide at steps 1-2 like the field, tighter at step 3 (replay-tested)
     skew=0.25,                   # price shift per unit of position
-    lam=30.0,                    # ridge strength towards the prior weights (v5 used 30; 100 was more accurate on recorded matches)
+    lam=100.0,                   # ridge strength towards the prior weights (v5 and v7 used 30; the v8 prior is a fit on today's field)
     mode="seat",                 # what the regression learns: "seat" = one weight per rival seat (v5), "shared" = one weight
                                  # per step on the rivals' summed mids, "both" = shared plus per-seat corrections
     lam_seat=300.0,              # ridge strength of the per-seat corrections in "both" mode (strong: they learn slowly)
-    hide0=True,                  # True: step 0 quotes 40 / 44 and shows nothing. False: quote informed (see step0_k)
-    step0_k=1.5,                 # informed step 0: centre = 42 + step0_k * (my dice - 7); the leaders lean 1.5 to 2.2
+    hide0=False,                 # True: step 0 quotes 40 / 44 and shows nothing (v7). False: quote informed (see step0_levels)
+    step0_levels=6.0,            # informed step 0 with three levels: mid 42 -/+ this when my dice are below / above 7 (None: smooth lean)
+    clip0=3.0,                   # a rival's step-0 mid is clipped at +-clip0 before use (the field's pushes run from 4 to 9, so
+                                 # only its sign and rough size carry information; held-out accuracy was best at 3 to 4)
+    step0_k=1.5,                 # smooth informed step 0 (step0_levels=None): centre = 42 + step0_k * (my dice - 7)
     step0_w=4.0,                 # informed step 0: full quote width
     take=(None, 0.5, 0.25, 0.25),    # by step: margin for taking a stale rival quote (None = off). If a rival's resting ask is at
                                      # least this far below my centre, my bid is raised to it (resting bid: ask lowered to it)
 )
-# Starting weights per step: (weight on my dice, weight on each other seat's mid at step 0, 1, ...). This is the v5 prior,
-# fitted on 23-26 Oct matches. Refits on 27 Oct matches (more informative step-0 mids) were: all seats
-# {1: (1.0, [0.57]), 2: (0.55, [0.05, 0.19]), 3: (0.30, [0.10, -0.06, 0.26])}; informed seats only
-# {1: (1.0, [0.55]), 2: (0.28, [0.06, 0.20]), 3: (0.26, [0.12, -0.08, 0.28])}. None gives the old "house reader" prior.
-PRIOR = {0: (1.0, []), 1: (1.0, [0.72]), 2: (0.75, [-0.16, 0.26]), 3: (0.26, [0.05, -0.03, 0.26])}
+# Starting weights per step: (weight on my dice, weight on the sum of the other seats' mids at step 0, 1, ...). v8: fitted on
+# 28 Oct matches, seat-rounds that quoted informed at step 0, step-0 mids clipped at +-3 (analysis/fit_prior.py ... informed 3).
+# The v5 / v7 prior (fitted on 23-26 Oct, when most of the field hid) was
+# {1: (1.0, [0.72]), 2: (0.75, [-0.16, 0.26]), 3: (0.26, [0.05, -0.03, 0.26])}.
+PRIOR = {0: (1.0, []), 1: (1.0, [0.74]), 2: (0.30, [0.08, 0.21]), 3: (0.28, [0.18, -0.07, 0.26])}
 
 
 def _dot(a, b):
@@ -74,7 +79,7 @@ class Agent:
         x = [1.0, self.own - 7.0]
         mids = []
         for t in range(step):
-            clip = CLIP0 if t == 0 else CLIP
+            clip = self.p["clip0"] if t == 0 else CLIP
             sent = history[t]["sent"]
             mids.append([max(-clip, min(clip, _mid(sent[j]) - MEAN)) if sent.get(j) else 0.0 for j in self.others])
         mode = self.p["mode"]
@@ -97,6 +102,13 @@ class Agent:
             if self.p["hide0"]:
                 return (MEAN - 2.0, MEAN + 2.0)
             w = self.p["step0_w"]
+            P = self.p["step0_levels"]
+            if P is not None:
+                if self.own == 7.0:
+                    return (MEAN - 2.0, MEAN + 2.0)
+                bid = round((MEAN + (P if self.own > 7.0 else -P) - w / 2.0) * 2.0) / 2.0
+                bid = min(max(bid, 12.0), 72.0 - w)
+                return (bid, bid + w)
             bid = round((MEAN + self.p["step0_k"] * (self.own - 7.0) - w / 2.0) * 2.0) / 2.0
             bid = min(max(bid, 12.0), 72.0 - w)
             return (bid, bid + w)
