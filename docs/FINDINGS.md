@@ -1,6 +1,6 @@
 # Dice Market Making: findings, status and ideas
 
-Working notes for the Everesteer dice market making challenge. Last updated 27 Oct 2026. The challenge closes
+Working notes for the Everesteer dice market making challenge. Last updated 28 Oct 2026. The challenge closes
 **1 Nov 2026, 00:00 London time**. Version v5 was uploaded on 27 Oct 2026 and is on the leaderboard (see section 1).
 
 ## 1. Status
@@ -296,7 +296,7 @@ My take fills fell from 0.74 to 0.41 per round (-45%); resting fills stayed at 1
 
 **Ideas, in the order I would try them (none built):** (a) deliberate take logic at steps 1 to 3 (raise the bid to a rival's resting ask when it is below my estimate by a margin; the field takes twice as often as I do); (b) test step-2 and step-3 quote width and skew exactly on the real recorded history (step 3 is the last step, so alternatives can be replayed against the rivals' recorded quotes with no reaction); (c) only then revisit revealing.
 
-## 12. Version 7: take logic and wide early quotes (built 28 Oct 2026, not uploaded)
+## 12. Version 7: take logic and wide early quotes (built 28 Oct 2026, uploaded 08:13 UTC the same day)
 
 **Standing check.** v5 is at Elo 1045 after 362 matches (it was 1113 at 192): the earlier rise was easier opponents, so about 1050 is its honest level. v6 is stored at Elo 992 (25 matches).
 
@@ -323,9 +323,47 @@ My take fills fell from 0.74 to 0.41 per round (-45%); resting fills stayed at 1
 
 **What to expect.** The replay estimate is about +0.14 per round over v5, which would take v5 from roughly -0.1 to -0.2 per round to about break-even. That is real but modest: the step-0 tax of about -0.66 per round remains, and the leaders earn +0.5 to +1.0. The estimate assumes rivals do not react; the take logic reveals nothing extra, but the v6 experience says to check on the live board (per-step edges against v5's own numbers, not raw rank).
 
+**Upload record:** v7 uploaded as "take logic v7", version id `3be28a`, at 2026-10-28T08:13:48Z (saved in `dice_market/data/v7_upload_time.txt`, git-ignored); passed the boss gate 3 of 3 (+5.70 / +4.97 / +5.30 per round vs the boss +2.24 / +0.73 / +4.64; the third was close). It is the active version. v5 (`24f4d3`) was at Elo 1038 after 365 matches, v6 (`400a1f`) at 992 after 25. Rollback: `dmapi.py activate 24f4d3`. **How to judge v7:** a new version gets a placement burst at Elo 1200 against the strongest opponents, so compare per-step edges (`analysis/compare_versions.py`, with the v7 time window) against v5's FIRST 25 matches (step 0 -0.59, steps 1 to 3 +0.15, total -0.44), not raw rank or later v5 matches. The prediction to check: steps 1 to 3 about +0.14 above v5's, step 0 unchanged.
+
 **Possible next steps:** upload v7 and compare per-step edges with v5's first 25 matches; look for more skill at steps 1 to 3 (the field still takes about twice as often as v5 did); revisit whether informed quoting could pay for a version that also reads (it did not for v6, but the replay tool now lets part of that cost be measured).
 
-## 13. How to reproduce
+**v7 on the live board (45 matches by 08:30 UTC, `analysis/compare_versions.py`).** Elo 1066 (v5 1038, v6 992). Per-step edges against v5's first 25 matches: v7's first 25 had rank 3.84 / win 0.290 / P&L -0.46 against v5's 3.84 / 0.290 / -0.44 (equal within noise), with steps 1 to 3 **+0.27 against +0.15** (predicted about +0.29), step 0 -0.74 against -0.59 (same code, slightly stronger opponents: 0.471 against 0.445). Taker fills rose from 0.74 to 0.94 per round and resting fills fell from 1.24 to 0.97, as designed. All 45 matches: rank 3.36, win 0.411, steps 1 to 3 +0.49 (later matches met easier opponents as the Elo fell, so they are not a fair benchmark). Verdict: a real but modest step, about +0.1 per round at steps 1 to 3; the step-0 tax is untouched.
+
+## 13. The agents ranked 15 to 40 (28 Oct 2026; 4,876 matches played 00:00 to 10:36 UTC)
+
+Ranks 15 to 40 (Elo 1368 down to 1192) are the agents to pass for the top 20 (rank 20 is Elo about 1357; I was rank 56 at 1103). Tools: `analysis/midpack.py` (profile of every agent), `midpack_pairs.py` (who earns from whom), `midpack_step0.py` (step-0 quote curves), `step0_levels.py` (replay of step-0 quote families), `midpack_charts.py` -> `docs/figures/6_ranks_15_to_40.png`. All numbers are per round, from the day's matches, with each label's current version (only one agent in the top 60 changed its step-0 style during the day).
+
+![ranks 15 to 40](figures/6_ranks_15_to_40.png)
+
+**1. Almost the whole top 40 plays informed at step 0.** Of the top 40, 36 quote a step-0 price that depends on their dice, 3 hide (leobgg #1, Rochronaldo #3, Benoba #34) and 1 does both (spivak #39, default in 56% of rounds). "Hide" here means 80% or more default quotes. Below rank 40, 19 hide and 27 are informed, and the hiders there do badly (Elo 1039, P&L -0.28). I am in that group.
+
+**2. Their recipe is a coarse three-level step-0 quote, not a smooth lean.** Dice sum below 7: bid and ask about 33 / 37 (mid 35.3 for ranks 15 to 25, 37.1 for 26 to 40); exactly 7: the default 40 / 44; above 7: mid 48.7 (ranks 15 to 25) or 46.8 (26 to 40). Width is always 4. These mids are 5 or more away from the fair value 35 + dice sum, so the quotes are deliberate "pushes", of size about 6.7 (ranks 15 to 25) against 5 (26 to 40), and up to 8.5 to 8.9 for a few (hermes, MerchTrader). Ranks 41 and below use smaller or smooth leans (push 1 to 3). The fitted quote functions at later steps are nearly identical across ranks 4 to 33: step 1 mid about 42 + 1.2 x (own dice - 7) + 1.3 x (mean of the other four step-0 mids - 42), width 3.9; step 2 weights 0.7 on own dice and 0.85 on the others' step-1 mids, width 3.9, mid shifted down about 1 per unit of position; step 3 weights 0.2 and 0.95, width about 3.0 (2.7 in the top 14). These are descriptive regression fits, not code.
+
+**3. Why they push so far (engine rule).** In the cross phase the highest bid is paired with the lowest ask at the midpoint when both are new (`dicemarket.match_step`). A far-out quote wins priority and meets the opposite extreme (an informed low quote) at a near-neutral price; the default 40 / 44 only gets what is left. That is why the hider's step-0 cost is so high. Replayed against today's field with every seat's step-0 quote replaced (976 matches, rivals' recorded quotes fixed; exact at step 0, approximate for the step-1 pick-offs), edge per round at steps 0 to 1: **default 40 / 44 -1.23**, smooth lean k=2 +0.13, **three levels with push P=6 +0.24 +- 0.02**, P=5 +0.20, P=7 +0.12, P=4 +0.02, P=8 -0.03, P=10 -0.51, P=12 -1.21. The best push is about 6, the same as ranks 15 to 25 play. Revealing costs 0.93 at later steps by the cross-section below (the step-1 pick-off is already inside this -1.23), so the net gain is about +0.3 per round, not +1.5.
+
+**4. Where each group earns (edge per round, all steps).**
+
+| Group | n | Elo | P&L | win | step 0 | steps 1 to 3 | takes / resting / crosses |
+|---|---|---|---|---|---|---|---|
+| top 14, informed | 12 | 1439 | +0.44 | 0.643 | +0.23 | +0.20 | +0.54 / -0.37 / +0.26 |
+| top 14, hiders | 2 | 1525 | +0.33 | 0.582 | -0.70 | +1.01 | +1.46 / -0.70 / -0.46 |
+| ranks 15 to 25, informed | 11 | 1338 | +0.29 | 0.563 | +0.16 | +0.12 | +0.47 / -0.38 / +0.19 |
+| ranks 26 to 40, informed | 14 | 1245 | +0.21 | 0.533 | +0.14 | +0.04 | +0.52 / -0.48 / +0.14 |
+| 41+, hiders | 19 | 1039 | -0.28 | 0.421 | -0.65 | +0.39 | +1.00 / -0.72 / -0.54 |
+| 41+, informed | 27 | 989 | -0.68 | 0.333 | +0.15 | -0.81 | +0.25 / -0.86 / -0.05 |
+| me (v7, hider) | 1 | 1103 | -0.02 | 0.419 | -0.63 | +0.63 | +1.39 / -0.98 / -0.41 |
+
+Among informed agents the step-0 edge is nearly the same in every tier (+0.14 to +0.23). What separates the tiers is the rest: correlation with Elo across 45 informed agents (rank 60 or better, 150+ matches): resting-quote loss **+0.80** (the less a picked-off quote loses, the higher the Elo), steps 1 to 3 edge +0.68, push size +0.61 (+0.69 for the push measured from the quote curves), the weight on others' step-0 mids at step 1 **-0.77** (the weak over-trust them: 1.7 to 2.0 against 1.2 to 1.3), pairwise win rate +0.82, P&L +0.72. Elo ~ 1191 + 353 x P&L per round (corr 0.72), so rank 20 needs about **+0.47 P&L per round and a pairwise win rate of about 0.61** in this field. Cross-sectional correlations, not proof of cause.
+
+**5. My gap to ranks 15 to 25, line by line.** Step-0 crossing -0.63 against +0.16 (0.79 worse); my step-0 quote picked off at step 1 -0.52 against -0.13 (0.39 worse); step 1 to 3 takes and later quotes +1.16 against +0.23 (0.93 better); net -0.02 against +0.28. So switching to the field's recipe at their steps 1 to 3 quality would be worth about +0.25 to +0.3 per round: it would bring me to ranks 15 to 25 *in P&L terms* (Elo about 1290 by the fit, rank about 25), not past them. The rest has to come from better steps 1 to 3 as an informed agent (resting loss -0.38 or less, taker edge +0.5).
+
+**6. The two top hiders.** leobgg and Rochronaldo earn +0.88 and +1.16 at steps 1 to 3 (me +0.64) and pay about -0.7 at step 0; most of Rochronaldo's lead over me is at step 3 (+0.44 against +0.03; for the two together +0.28 against +0.03). Their profit comes from weak agents (+0.22 from rank 41+ informed, +0.11 from other hiders) and is about zero against the top 40 (`midpack_pairs.py`). A top hider at the table costs informed agents about 0.2 to 0.35 per round at steps 1 to 3 (ranks 15 to 40: +0.10 with none, -0.11 with one, 483 matches; me: +0.67 against -0.10 in 21 matches). Hiding can reach the top but only with their steps 1 to 3 skill, which I do not have.
+
+**7. What this says to do next.** The step-0 default is the single biggest loss (1.2 per round) and the field's answer is the three-level push of about 6, not the smooth lean that v6 used. The three-level quote reveals the sign of my dice sum, which is 78% of its variance (4.5 of 5.8), against 100% for a smooth lean, so it is not a small reveal: the cost at steps 1 to 3 could still be large (v6 paid 1.35 against the strongest opponents; ranks 15 to 25 pay about 0.9 by the cross-section above). Candidate v8 = v7 plus the three-level step-0 quote with P=6 and the v5 estimator reading others' step-0 mids, to be judged live against v7's first 25 matches (step 0 -0.74, steps 1 to 3 +0.27, total -0.46); the live test is the only way to measure the later-step cost. Not built or uploaded yet.
+
+**Caveats.** One morning's data (10.5 hours); versions change; the tier means are weighted by rounds; coefficients from the regressions are descriptive; the step-1 pick-off part of the replay holds rivals' step-1 quotes fixed, and what revealing costs later cannot be measured offline.
+
+## 14. How to reproduce
 
 ```
 cd dice_market
@@ -354,6 +392,12 @@ python3 analysis/fit_opponents.py data/replays.jsonl.gz opponents/fits.json 3   
 python3 analysis/make_opponents.py opponents/fits.json opponents                 # write opponents/imit_*.py
 python3 analysis/make_adaptive.py opponents/fits.json agent.py opponents         # write opponents/adapt_*.py
 python3 analysis/validate_opponents.py data/profile.json 200                     # fidelity of the copies
+python3 dmapi.py --json leaderboard > data/lb_now.json; python3 dmapi.py dataset --since 2026-10-28T00:00:00Z -o data/day28.jsonl.gz
+python3 analysis/midpack.py data/day28.jsonl.gz data/lb_now.json data/midpack.json          # profile of every agent
+python3 analysis/midpack_pairs.py data/day28.jsonl.gz data/midpack.json data/midpack_pairs.json   # who earns from whom
+python3 analysis/midpack_step0.py data/day28.jsonl.gz data/midpack.json data/midpack_step0.json  # step-0 quote curves
+python3 analysis/step0_levels.py data/day28.jsonl.gz 1000 8 5 | tee data/step0_levels.txt      # step-0 families, exact at step 0
+python3 analysis/midpack_charts.py data ../docs/figures                                      # figure 6
 python3 tourney.py agent.py                 # suite, incl. gate and pool: --pool adapt -n 400
 python3 analysis/tune_spreads.py agent.py 80 2     # tune half widths and skew
 python3 analysis/compare_variants.py agent.py 150  # compare settings on held-out mixes
