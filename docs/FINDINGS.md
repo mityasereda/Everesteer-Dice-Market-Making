@@ -230,7 +230,7 @@ trusting any local result, and check the live leaderboard early.
 recent matches and speed up learning (for example one shared weight per step on the others' summed mids instead of four
 separate ones); (3) refit the opponent copies on the new field.
 
-## 10. Version 6 (built 27 Oct 2026, uploaded 22:33 UTC the same day)
+## 10. Version 6 (built 27 Oct 2026, uploaded 22:33 UTC, rolled back to v5 at about 22:50 UTC; see section 11)
 
 **Changes from v5** (`dice_market/agent.py`):
 1. **Step 0 is quoted informed:** centre 42 + 1.5 x (dice - 7), width 4 (`hide0=False`, `step0_k`, `step0_w`).
@@ -265,7 +265,38 @@ Step-0 quote edge on the same unseen matches, by number of rivals who hide (0-1 
 
 **Checks:** `--check` passes; a full 200-round match has zero errors and timeouts; `agent.py` is 6.4 KB with no imports and none of the names the upload scan refuses.
 
-## 11. How to reproduce
+## 11. v6 on the real board, and why it lost (27 Oct 2026, 25 matches, 5,000 rounds)
+
+**Getting the data.** All 25 v6 matches are in the bulk dataset under my handle `fanaberysty` (the dataset's `you` flag is NOT my agent: it marks other seats, so filter by label). `dmapi.py matches` lists only the newest 30 league matches, so most of my matches are gone from it within minutes; use `dataset --since`. v6 played 24 matches in the first ten minutes (a placement burst), then slowed to about one match per ten minutes. Versions share the label, so split by time: v5 before 22:33:26 UTC (192 matches), v6 until the rollback at about 22:50, then v5 again.
+
+**Result.** v6 finished at Elo 992 after 25 matches (-0.73 per round, rank 66). Rolled back with `dmapi.py activate 24f4d3`; v5 stays active at Elo 1113.
+
+**Fair comparison.** v5's first 25 matches (same starting rating, same opponent pool; opponent strength 0.445 vs 0.450 and informed share of rivals 0.45 vs 0.49) against v6's 25 (`analysis/compare_versions.py`). v5's later matches (26 to 192, +0.12 per round) are not the right comparison: as its Elo fell toward 1100 it met easier opponents.
+
+| Edge per round | v5 first 25 | v6 | Change |
+|---|---|---|---|
+| Step 0 | -0.59 | +0.47 | **+1.06** (predicted +1.2) |
+| Steps 1 to 3 | +0.15 | -1.20 | **-1.35** |
+| of which my takes | +1.47 | +0.67 | -0.80 |
+| of which my resting quotes picked off | -1.50 | -1.62 | -0.12 |
+| of which midpoint crosses | +0.17 | -0.25 | -0.42 |
+| Total | -0.44 | -0.73 | -0.29 |
+| Pairwise win rate / average rank | 0.290 / 3.84 | 0.180 / 4.28 | |
+
+My take fills fell from 0.74 to 0.41 per round (-45%); resting fills stayed at 1.25 per round, about -1.3 each.
+
+**Mechanism: revealing my dice gave away my step-1 information edge.** RMSE of the quote midpoint, step 1: me 4.43 vs rivals 5.83 with v5 (edge **+1.41**); me 4.37 vs rivals 4.55 with v6 (edge **+0.18**). My accuracy did not change; the rivals' improved by 1.28 once they could read my step-0 quote. v5 earned at steps 1 to 3 by knowing more than the table at step 1 while staying opaque, which is also how the two remaining strong hiders (MPP, Docsdadi) earn +0.8 to +0.97 there while losing about 0.7 at step 0. v6 also lacks the field's skill at those steps: the average candidate earns +1.29 from takes and loses 1.03 resting (net +0.26), against my +0.67 and -1.62 (net -0.95); v5's information edge had been hiding that skill gap.
+
+**The step-0 trade-off.** The default quote loses about 0.9 per round whatever my dice are (it is the tax informed rivals charge any uninformed passive quote). The informed quote's gain is concentrated in extreme dice: +2.78 for sums of 2 to 4 and +3.62 for 11 to 12, only +0.19 for 7 to 8; sums of 4 or less or 10 or more are about a third of rounds and give about 70% of the gain. Extreme sums also carry about 80% of the information in a dice sum, so revealing only when extreme gives up most of the information for about three-quarters of the gain: no free hybrid on that axis.
+
+**Takeaways.**
+1. Hiding and revealing are close to a wash at the 1200-level opponent pool (v5 -0.44 vs v6 -0.73, within noise overall though each component is significant). The real gap to the leaders is skill at steps 1 to 3 (takes and not being picked off), which has to improve under either choice.
+2. Do not trust local simulation for steps 1 to 3 or for the cost of revealing (both were wrong).
+3. A new upload gets a placement burst at Elo 1200 against the strongest opponents, so judge a version on its per-step edges against the first 25 matches of the previous version, not on later matches.
+
+**Ideas, in the order I would try them (none built):** (a) deliberate take logic at steps 1 to 3 (raise the bid to a rival's resting ask when it is below my estimate by a margin; the field takes twice as often as I do); (b) test step-2 and step-3 quote width and skew exactly on the real recorded history (step 3 is the last step, so alternatives can be replayed against the rivals' recorded quotes with no reaction); (c) only then revisit revealing.
+
+## 12. How to reproduce
 
 ```
 cd dice_market
@@ -281,6 +312,7 @@ python3 analysis/passive.py agent.py data/new3.jsonl.gz 3 0   # estimation backt
 python3 analysis/step0_by_field.py data/new3.jsonl.gz        # step-0 quote edge by number of hiders
 python3 analysis/step0_lean.py agent.py 100                  # lean of the step-0 quote across opponent populations
 python3 dmapi.py --json matches --mine > data/mine.json   # then `dmapi.py replay <id> -o data/mine/<id>.json` for each id
+python3 analysis/compare_versions.py data/mine_all.jsonl.gz data/recent_tight.jsonl.gz   # v5 first 25 vs v5 later vs v6 (all matches by handle)
 python3 analysis/my_matches.py                  # where my real matches lose money
 python3 analysis/step0_counterfactual.py data/new.jsonl.gz 660   # step-0 quote alternatives vs recorded rivals
 python3 analysis/step0_search.py data/new.jsonl.gz               # train / test search of step-0 quotes

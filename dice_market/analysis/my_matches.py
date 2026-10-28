@@ -1,6 +1,6 @@
 """Analyse my real leaderboard matches (replays downloaded by `dmapi.py replay`, in data/mine/*.json).
 
-    python3 analysis/my_matches.py [agent.py]
+    python3 analysis/my_matches.py [agent.py] [replay folder=data/mine]
 
 1. Reproduce: feed my agent the recorded history and check it re-sends exactly the quotes it sent live.
 2. Where the money goes: edge per round by step and by role (taker / resting / midpoint cross), me vs the field.
@@ -51,7 +51,8 @@ def roles(step_idx, steps):
     return out
 
 
-files = sorted(glob.glob(str(ROOT / "data" / "mine" / "*.json")))
+FOLDER = sys.argv[2] if len(sys.argv) > 2 else str(ROOT / "data" / "mine")
+files = sorted(glob.glob(str(Path(FOLDER) / "*.json")))
 matches = [json.load(open(f)) for f in files]
 mod = load_agent()
 exact = total = 0
