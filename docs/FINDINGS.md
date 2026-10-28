@@ -296,7 +296,36 @@ My take fills fell from 0.74 to 0.41 per round (-45%); resting fills stayed at 1
 
 **Ideas, in the order I would try them (none built):** (a) deliberate take logic at steps 1 to 3 (raise the bid to a rival's resting ask when it is below my estimate by a margin; the field takes twice as often as I do); (b) test step-2 and step-3 quote width and skew exactly on the real recorded history (step 3 is the last step, so alternatives can be replayed against the rivals' recorded quotes with no reaction); (c) only then revisit revealing.
 
-## 12. How to reproduce
+## 12. Version 7: take logic and wide early quotes (built 28 Oct 2026, not uploaded)
+
+**Standing check.** v5 is at Elo 1045 after 362 matches (it was 1113 at 192): the earlier rise was easier opponents, so about 1050 is its honest level. v6 is stored at Elo 992 (25 matches).
+
+**A better test tool: replaying real rounds with the rivals' quotes held fixed** (`analysis/replay_policy.py`). My agent plays each recorded round through the real matching engine against the rivals' recorded quotes. It is exact within one step (nobody can react inside a step) and approximate across steps (rivals cannot react to my different quotes), so it suits changes that reveal no new information (taking, widths, skew) and cannot judge revealing (v6). Baseline check (`validate_replay.py`): replaying my real v5 on 80 of its real matches (16,000 rounds) reproduces the real edge per step (real -0.714 / +0.278 / +0.279 / -0.009 = -0.166; replayed -0.699 / +0.250 / +0.280 / +0.000 = -0.169). The step-0 column varies by about +-0.02 between variants from random tie-breaking, which is the noise floor.
+
+**Take logic** (`take` margins in `agent.py`): at step s, if a rival's resting ask is at least a margin below my centre (estimate minus skew), raise my bid to that ask and buy at its price; if a resting bid is above my centre by the margin, lower my ask to it. Gains vs v5, per round, paired on identical real rounds (tuning set = my first 200 v5 matches, 40,000 rounds):
+
+| Variant | Gain | +-se |
+|---|---|---|
+| margins .5 / .25 / .25 (steps 1 / 2 / 3) | +0.111 | 0.016 |
+| margins 1.0 / .5 / .5 | +0.080 | 0.013 |
+| margins 1.5 / .75 / .75 | +0.034 | 0.009 |
+| margin 0 (take anything stale) | +0.063 | 0.019 |
+| step 1 only, .5 | +0.093 | 0.014 |
+| step 2 only / step 3 only | +0.010 / +0.009 | |
+
+**Quote widths, skew and learner settings, on top of the best take margins:** half-width at step 2 of 2.0 (a width of 4) gives +0.171 (1.5: +0.148); narrower step 1 or 2 is clearly worse (step 1 half 1.5: -0.016, 1.0 at steps 1 and 2: -0.148); step 3 half 0.5 / 1.5 are +0.087 / +0.106 (1.0 stays); skew 0.10 / 0.50 are +0.094 / +0.087 (0.25 stays); lam 100, the refitted priors and mode "both" are no better or worse for a hider (+0.098 / +0.054 / +0.001), so v5's estimator stays. Wide step 2 alone gains nothing (it loses 0.12 at step 2 and wins it back at step 3); the take logic recovers the step-2 loss, so the two together add up. The field's habit (wide at steps 1 and 2, tighter at step 3) was right; my step-2 tightening, tuned on old simulated copies, was a mistake.
+
+**Validation on 162 matches never used for tuning** (`analysis/take_refine.py`): take alone +0.060 +- 0.019; wide step 2 alone +0.013; **wide step 2 + take +0.139 +- 0.021** (+0.171 on the tuning set). Margins around .5 / .25 / .25 are all within noise of each other (+0.16 to +0.18); a step-2 margin of 1.0 is worse (+0.132).
+
+**Step-0 tax is not removable by hiding differently.** Quotes that reveal nothing, replayed exactly against 368,400 recorded seat-rounds (`analysis/step0_uninformative.py`): (39.5, 43.5) -0.692, (40.5, 44.5) -0.706, (39, 43) -0.729, (41, 45) -0.738, **(40, 44) -0.757**, (38, 42) -0.810, (42, 46) -0.811, narrower quotes -0.93 to -1.37. The best is only 0.065 better than the default, within the noise between neighbouring options, so the default stays.
+
+**v7 = `agent.py` defaults:** hide at step 0 (40 / 44), v5's estimator and prior (lam 30, per-seat weights), half widths (2, 2, 2, 1), skew 0.25, take margins (None, .5, .25, .25). With take off and widths (2, 2, 1, 1) it quotes identically to v5 (checked). Checks: `--check` passes, a full 200-round match has no errors, 1,600 random quotes were all valid with the slowest call 0.01 ms, 7.9 KB, no imports, upload scan clean.
+
+**What to expect.** The replay estimate is about +0.14 per round over v5, which would take v5 from roughly -0.1 to -0.2 per round to about break-even. That is real but modest: the step-0 tax of about -0.66 per round remains, and the leaders earn +0.5 to +1.0. The estimate assumes rivals do not react; the take logic reveals nothing extra, but the v6 experience says to check on the live board (per-step edges against v5's own numbers, not raw rank).
+
+**Possible next steps:** upload v7 and compare per-step edges with v5's first 25 matches; look for more skill at steps 1 to 3 (the field still takes about twice as often as v5 did); revisit whether informed quoting could pay for a version that also reads (it did not for v6, but the replay tool now lets part of that cost be measured).
+
+## 13. How to reproduce
 
 ```
 cd dice_market
@@ -312,6 +341,11 @@ python3 analysis/passive.py agent.py data/new3.jsonl.gz 3 0   # estimation backt
 python3 analysis/step0_by_field.py data/new3.jsonl.gz        # step-0 quote edge by number of hiders
 python3 analysis/step0_lean.py agent.py 100                  # lean of the step-0 quote across opponent populations
 python3 dmapi.py --json matches --mine > data/mine.json   # then `dmapi.py replay <id> -o data/mine/<id>.json` for each id
+python3 analysis/validate_replay.py 80          # replay tool reproduces my real v5 per-step edges
+python3 analysis/take_experiment.py 200         # take margins on my real v5 matches
+python3 analysis/quote_experiment.py 200        # widths, skew, learner settings
+python3 analysis/take_refine.py                 # refine margins and validate on held-out matches
+python3 analysis/step0_uninformative.py data/late.jsonl.gz 1500   # step-0 quotes that reveal nothing
 python3 analysis/compare_versions.py data/mine_all.jsonl.gz data/recent_tight.jsonl.gz   # v5 first 25 vs v5 later vs v6 (all matches by handle)
 python3 analysis/my_matches.py                  # where my real matches lose money
 python3 analysis/step0_counterfactual.py data/new.jsonl.gz 660   # step-0 quote alternatives vs recorded rivals

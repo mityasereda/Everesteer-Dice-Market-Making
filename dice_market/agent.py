@@ -1,4 +1,4 @@
-"""Dice market agent v6: an adaptive reader.
+"""Dice market agent v7: an adaptive reader that hides at step 0, quotes wide early and takes stale quotes.
 
 Idea: the value is the sum of 12 dice and I see 2. The other seats' quotes carry information about the dice I
 cannot see. At every step I estimate the value as a linear function of my own dice and the mids the other seats
@@ -6,28 +6,32 @@ sent in earlier steps. The weights start at PRIOR (a fit on real leaderboard mat
 match by ridge regression: after every round I learn the true value, so I can check how well each seat's quotes
 predicted it and re-weight them. The ridge strength (lam) is how many rounds of belief the prior is worth.
 
-Step 0 is quoted informed: centre 42 + 1.5 x (my dice - 7), width 4. The default 40 / 44 is crossed at the midpoint by
-informed rivals, which is where v5 lost its money. At steps 1 to 3 the quote is the estimate -/+ a half width, shifted
-against my position so inventory is worked off. Pure Python, about 0.1 ms per call.
+Step 0: by default the quote is 40 / 44 (hide0) so rivals learn nothing about my dice; informed quoting (hide0=False)
+was tried as v6 and lost, because revealing my dice erased my step-1 information edge. At steps 1 to 3 the quote is the
+estimate -/+ a half width, shifted against my position so inventory is worked off. Optional take logic: if a rival's
+resting quote is stale against my estimate by more than a margin, my quote is moved to meet it, so I trade at its price.
+Pure Python, about 0.1 ms per call.
 """
 MEAN = 42.0
 CLIP0, CLIP = 5.0, 15.0     # a step-0 mid says at most +-5 about a pair of dice; later mids can say more
 PARAMS = dict(
-    half=(2.0, 2.0, 1.0, 1.0),   # half width of my quote, by step (tuned on adaptive copies of real agents)
+    half=(2.0, 2.0, 2.0, 1.0),   # half width of my quote, by step: wide at steps 1-2 like the field, tighter at step 3 (replay-tested)
     skew=0.25,                   # price shift per unit of position
-    lam=100.0,                   # ridge strength towards the prior weights (100 beat 30 on held-out real matches, all phases)
-    mode="both",                 # what the regression learns: "seat" = one weight per rival seat (v5), "shared" = one weight
+    lam=30.0,                    # ridge strength towards the prior weights (v5 used 30; 100 was more accurate on recorded matches)
+    mode="seat",                 # what the regression learns: "seat" = one weight per rival seat (v5), "shared" = one weight
                                  # per step on the rivals' summed mids, "both" = shared plus per-seat corrections
     lam_seat=300.0,              # ridge strength of the per-seat corrections in "both" mode (strong: they learn slowly)
-    hide0=False,                 # True: step 0 quotes 40 / 44 and shows nothing. False: quote informed (see step0_k)
+    hide0=True,                  # True: step 0 quotes 40 / 44 and shows nothing. False: quote informed (see step0_k)
     step0_k=1.5,                 # informed step 0: centre = 42 + step0_k * (my dice - 7); the leaders lean 1.5 to 2.2
     step0_w=4.0,                 # informed step 0: full quote width
+    take=(None, 0.5, 0.25, 0.25),    # by step: margin for taking a stale rival quote (None = off). If a rival's resting ask is at
+                                     # least this far below my centre, my bid is raised to it (resting bid: ask lowered to it)
 )
-# Starting weights per step: (weight on my dice, weight on each other seat's mid at step 0, 1, ...). Pooled least-squares
-# fit on 2,200 real matches played on 27 Oct 2026 (analysis/fit_prior.py informed), using only seat-rounds that quoted
-# informed at step 0, as v6 does: rivals' later mids then echo my own dice, so the weight on my dice is lower. (The first fit, on 23-26 Oct when almost everyone hid, was 0.72 / 0.75 / 0.26 ...)
-# None gives the old "house reader" prior (every step-0 mid read as that seat's dice).
-PRIOR = {0: (1.0, []), 1: (1.00, [0.55]), 2: (0.28, [0.06, 0.20]), 3: (0.26, [0.12, -0.08, 0.28])}
+# Starting weights per step: (weight on my dice, weight on each other seat's mid at step 0, 1, ...). This is the v5 prior,
+# fitted on 23-26 Oct matches. Refits on 27 Oct matches (more informative step-0 mids) were: all seats
+# {1: (1.0, [0.57]), 2: (0.55, [0.05, 0.19]), 3: (0.30, [0.10, -0.06, 0.26])}; informed seats only
+# {1: (1.0, [0.55]), 2: (0.28, [0.06, 0.20]), 3: (0.26, [0.12, -0.08, 0.28])}. None gives the old "house reader" prior.
+PRIOR = {0: (1.0, []), 1: (1.0, [0.72]), 2: (0.75, [-0.16, 0.26]), 3: (0.26, [0.05, -0.03, 0.26])}
 
 
 def _dot(a, b):
@@ -100,7 +104,21 @@ class Agent:
         h = self.p["half"][step]
         bid = round((centre - h) * 2.0) / 2.0                 # snap the bid to the 0.5 grid, then ask = bid + width,
         bid = min(max(bid, 12.0), 72.0 - 2.0 * h)             # so rounding can never narrow or invalidate the quote
-        return (bid, bid + 2.0 * h)
+        ask = bid + 2.0 * h
+        m = self.p["take"][step]
+        if m is not None and history:
+            book = history[-1]["quotes"]                       # the rivals' resting quotes entering this step
+            asks = [q[1] for j, q in book.items() if j != self.seat and q[1] is not None]
+            bids = [q[0] for j, q in book.items() if j != self.seat and q[0] is not None]
+            if asks and bid < min(asks) <= centre - m:         # a stale ask far below my value: bid up to it and buy at its price
+                bid = min(asks)
+            elif bids and ask > max(bids) >= centre + m:       # a stale bid far above my value: ask down to it and sell at its price
+                ask = max(bids)
+            if not (bid < ask <= bid + 4.0):                   # keep the quote valid whatever happened
+                bid = round((centre - h) * 2.0) / 2.0
+                bid = min(max(bid, 12.0), 72.0 - 2.0 * h)
+                ask = bid + 2.0 * h
+        return (bid, ask)
 
     def end_round(self, result):
         y = result["value"] - MEAN
