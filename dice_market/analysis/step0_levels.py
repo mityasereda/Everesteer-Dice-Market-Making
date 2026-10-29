@@ -52,8 +52,33 @@ CANDS = {"default 40/44": lambda own: (40.0, 44.0), "smooth lean k=2.0": linear(
 for p in (3, 4, 5, 6, 6.5, 7, 8, 9, 10, 12):
     CANDS[f"3 levels P={p:g}"] = levels(p)
 CANDS["3 levels P=7, only own<=5 / >=9"] = levels(7, extreme=2)
-CANDS["3 levels low 6 / high 8"] = levels(6, 8)
+import random as _r
+_rr = _r.Random(11)
+
+
+def decoy(p, w=4.0, flip=None):
+    """Far quote on a side chosen independently of my dice (flip=None: coin toss; flip=True: always the opposite side of my dice)."""
+    def f(own):
+        up = _rr.random() < 0.5 if flip is None else (own < 7) if flip else (own > 7)
+        if flip is not None and own == 7:
+            up = _rr.random() < 0.5
+        b = min(max(snap(42.0 + (p if up else -p) - w / 2), 12.0), 72.0 - w)
+        return (b, b + w)
+    return f
+
+
+for p in (4, 5, 6, 7):
+    CANDS[f"decoy: coin-toss side, P={p}"] = decoy(p)
+CANDS["decoy: opposite side to my dice, P=6"] = decoy(6, flip=True)
 CANDS["3 levels low 8 / high 6"] = levels(8, 6)
+for w in (2.0, 3.0, 4.0):
+    for sh in (-2.0, -1.0, 0.0, 1.0, 2.0):
+        CANDS[f"hider quote width {w:g} shifted {sh:+g}"] = (lambda w, sh: (lambda own: (40.0 + sh + (4.0 - w) / 2, 44.0 + sh - (4.0 - w) / 2)))(w, sh)
+for bid, ask in ((40.0, 43.5), (40.5, 44.0), (40.5, 43.0), (41.0, 44.0), (40.0, 43.0), (41.0, 43.0), (39.5, 43.0), (41.0, 44.5), (40.5, 43.5), (40.0, 44.0)):
+    CANDS[f"hider quote {bid:g}/{ask:g}"] = (lambda b, a: (lambda own: (b, a)))(bid, ask)
+for c in (2, 3, 4):
+    for p in (6, 7, 8):
+        CANDS[f"push only when |dice-7|>={c}, P={p}"] = levels(p, extreme=c)
 
 
 def work(args):

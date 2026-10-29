@@ -375,9 +375,44 @@ Among informed agents the step-0 edge is nearly the same in every tier (+0.14 to
 
 **Upload record:** v8 uploaded as "three-level step 0 v8", version id `60faaf`, at 2026-10-28T11:27:44Z (`dice_market/data/v8_upload_time.txt`, git-ignored); passed the boss gate 3 of 3 (+5.04 / +4.76 / +6.58 per round vs the boss +4.16 / +2.56 / +3.35). It is the active version. v7 (`3be28a`) was at Elo 1084 after 127 matches. Rollback: `dmapi.py activate 3be28a`.
 
-**How to judge v8 once uploaded** (placement burst of about 25 matches against the strongest opponents): compare with v7's FIRST 25 matches (rank 3.84, win 0.290, P&L -0.46; step 0 -0.74, steps 1 to 3 +0.27) using `analysis/compare_versions.py` with the v8 upload time. Step 0 should rise by about +1 (replay: +1.0); the question is how much steps 1 to 3 fall (v6 fell by 1.35). Roll back to v7 with `dmapi.py activate 3be28a` if v8's first 25 matches are clearly worse than v7's in rank and win rate; v8 breaks even if steps 1 to 3 fall by less than the step-0 gain.
+**v8 on the live board (330 matches, 11:28 UTC 28 Oct to 08:40 UTC 29 Oct; `analysis/compare_versions.py`, `v8_matches.py`, `hider_split.py`).** Verdict: **v8 is not better than v7; it is worse.** Elo 1038 (v7 1084, v5 1038, v6 992); win rate 0.402 against v7's 0.463 (and v5's 0.449); P&L -0.13 against +0.03. No errors, timeouts or forfeits.
 
-## 15. How to reproduce
+| per round | v7, all 107 | v8, first 25 | v8, 26-100 | v8, 101-330 | v8, all 330 |
+|---|---|---|---|---|---|
+| rank / win | 3.15 / 0.463 | 2.96 / 0.510 | 3.03 / 0.493 | 3.55 / 0.361 | 3.39 / 0.402 |
+| step 0 | -0.55 | +0.56 | +0.59 | +0.29 | +0.38 |
+| steps 1 to 3 | +0.58 | -0.47 | -0.48 | -0.53 | -0.51 |
+| rivals informed at step 0 | 0.45 | 0.58 | 0.66 | 0.62 | 0.62 |
+
+- **Step 0 delivered what the replay said** (+0.93 over v7; the replay said about +1.0 to +1.2) **but steps 1 to 3 fell by 1.09**, almost all in taking: takers +1.53 (1.01 fills, +1.52 per fill) fell to +0.39 (0.64 fills, +0.60 per fill), resting -1.13 to -0.81. At steps 1 to 3 v8 is below the average candidate (+0.15), v7 was far above it (-0.10). Step 2 is the worst: -0.27 to -0.49 in every 25-match block, against +0.13 for v7 and about 0 for ranks 15 to 25.
+- **The "first 25 matches" benchmark misled this time** (v8's first 25 beat v7's first 25: rank 2.96 against 3.84). A big early step-0 harvest hid the taking collapse, then shrank (+0.56 to +0.29) as the field lost hiders. Compare complete matches by table composition instead.
+- **The push earns from hiders.** My step-0 edge by the number of rivals quoting 40/44 in the round: 0: -0.05, 1: +0.42, 2: +0.63, 3: +0.39, 4: -0.54; against a hider +0.19 to +0.28 per seat-round, against informed rivals +0.01 to +0.10. Rivals informed at step 0: 0.45 on 28 Oct morning, 0.62 now.
+- **Hiding against pushing at the same table** (`hider_split.py`; total edge per round by the number of hiders among the four rivals; v5 / v7 / v8): 0 hiders -0.20 / -0.11 / -0.28; 1: -0.01 / -0.17 / -0.01; 2: +0.22 / +0.08 / -0.01; 3: +0.23 / +0.18 / -0.43; all +0.05 / +0.03 / -0.13. Pushing never beats hiding at any table composition, so a "push if a hider is present" switch is not supported. With no hiders, hiding earns +1.0 at steps 1 to 3 against -1.2 at step 0 (a wash); pushing earns +0.08 and -0.37.
+- **The cause is not estimation or tuning.** My quote RMSE at steps 1 to 3 is 4.27 / 3.68 / 3.05 against the other candidates' 4.72 / 3.61 / 3.36. The loss is spread over every rival type (top 14 down to 41+); my step-2 takes earn about 0 against all. A refit of the prior on the live matches gives the v8 prior back. Later-step knobs replayed on the live matches (200 tuning, same sample for all; the replay reproduces the real per-step edges: +0.380 / +0.006 / -0.391 / -0.111 against real +0.38 / -0.01 / -0.40 / -0.11) are all within +-0.03 of the defaults: skew 0 to 0.75, half widths, take margins, lam 30 / 300, mode both / shared, clip0 2 / 5; a quote leaning 20% harder than the estimate at step 1 gives +0.03, at all steps -0.17; extra weight on own dice at step 1 +0.015. Public trades add almost nothing to the estimate (held-out RMSE at step 2 3.654 to 3.622; `analysis/trade_info.py`).
+- **Masking my dice in later quotes** (quote as if my dice were 7, but take using the real estimate; `agent.py` option `mask`, `analysis/hide_longer.py`, replayed on my 472 matches as a hider): costs 0.28 (step 3 only) to 0.86 (step 1) per round immediately; the replay cannot credit rivals for staying ignorant, so the idea is open but unproven (the top hiders Rochronaldo and Sapeo do hide step 1).
+- **Conclusion.** Neither hiding (v5, v7) nor pushing (v6, v8) beats the field: both end near zero P&L and Elo 1040 to 1085, because what hiding costs at step 0 (about 1.2) it earns back at steps 1 to 3 (about 1.0 to 1.2), and pushing does the reverse. Ranks 15 to 25 earn +0.28 by being informed AND earning about +0.1 at steps 1 to 3; I reach neither at steps 1 to 3 when informed (-0.5). The mechanism they use at steps 1 to 3 is not visible in the quote functions (same accuracy, same shape) and no tested change closes it.
+- **Code state:** `agent.py` now has the extra options `gain`, `boost` and `mask`, all off by default; with defaults it quotes identically to the uploaded v8 (max difference 0 over 40 random matches). Active version on the board is still v8 (`60faaf`); `dmapi.py activate 3be28a` puts v7 (Elo 1084) back.
+
+**How v8 was judged (superseded: see the live results above, the first-25 comparison was misleading)** (placement burst of about 25 matches against the strongest opponents): compare with v7's FIRST 25 matches (rank 3.84, win 0.290, P&L -0.46; step 0 -0.74, steps 1 to 3 +0.27) using `analysis/compare_versions.py` with the v8 upload time. Step 0 should rise by about +1 (replay: +1.0); the question is how much steps 1 to 3 fall (v6 fell by 1.35). Roll back to v7 with `dmapi.py activate 3be28a` if v8's first 25 matches are clearly worse than v7's in rank and win rate; v8 breaks even if steps 1 to 3 fall by less than the step-0 gain.
+
+## 15. Version 9: v7 with a narrower step-0 quote, built 29 Oct 2026 (not uploaded)
+
+**What it is.** The hider again (v5 / v7 estimator, old prior, clip 5), with four changes (`dice_market/agent.py`; v8 as uploaded is in git at 9961f57 and `data/agent_v8_uploaded.py`): step-0 quote **40.5 / 43.5** instead of 40 / 44 (`hide_w=3`), `lam=100` (was 30), take margins (None, .5, .5, .5) (were .25 at steps 2 and 3), half width at step 3 of 1.5 (was 1.0). With v7's settings it quotes identically to frozen v7 (max difference 0 over 40 random matches). `gain`, `boost` and `mask` stay in the file, off.
+
+**Why this and not something cleverer.** After v8 lost (section 14) I priced the remaining ideas, all against the 28-29 Oct field:
+- **Decoy push** (far quote, side chosen by coin toss, so nothing is revealed): -1.5 to -1.9 per round at steps 0 to 1 against -1.2 for the default; opposite side to my dice -3.4. The push earns from its direction, not from priority alone.
+- **Push only when my dice are extreme** (|dice - 7| >= 2 / 3 / 4, P=6): +0.14 / -0.18 / -0.58 against +0.23 for every round; it reveals just as much (78% to 86% of the variance of my dice sum unless it pushes in under a fifth of rounds, where the gain is already negative).
+- **Masked later quotes** (section 14): -0.28 to -0.86 in replay.
+- **Reaction size.** Rivals weight each seat's mid at only about 0.2 per unit at later steps, so leaking my dice at step 1 shifts their step-2 quotes by about 0.5 standard deviations, worth perhaps 0.1: too small to pay for the accuracy a masked quote gives up.
+- **Hider step-0 quote, exact search on the newest field** (`step0_levels.py`, 976 matches): 40.5 / 43.5 **-1.00** (steps 0 to 1) against 40 / 44 -1.12; widths 2 and 3 shifted, 3.5 asymmetric shapes and 4 shifted by +-1 or +-2 are all worse.
+
+**Replay estimates, gain over v7's settings (per round).** Every candidate seat plays the agent against recorded rivals (`analysis/v9_tune.py`; 2,001 seat-matches over 28-29 Oct for tuning, 1,504 different ones for validation): narrower quote alone +0.185 / +0.219 (step 0 -0.12 but my step-0 quote is picked off much less at step 1, +0.30); with lam 100 +0.258 / +0.275; with take .5/.5/.5 +0.298; with half 1.5 at step 3 **+0.314 +- 0.012 on the validation sample**. Single changes: take margins +0.02, step-3 half 1.5 +0.02, lam 300 equal to 100, skew 0.1 / 0.5 and gain 1.1 / 1.2 at step 1 within noise, half 0.5 at step 3 -0.07. **On my own 472 real matches as a hider** (v5 / v7 era, rivals' real reactions, `analysis/v9_final.py`): v7 settings +0.126, v9 **+0.187, a gain of only +0.060 +- 0.017** (step 0 -1.00 against -0.66, step 1 +0.68 against +0.29). The two differ because the older field had about 55% hiders (the narrower quote loses more at step 0 against hiders) and today's is about 62% informed, where it wins most. **Expected gain: about +0.06 to +0.3 per round**, more the more informed the field; at v7's real P&L (+0.03) that is roughly Elo 1085 to 1190.
+
+**Checks:** `--check` passes (+3.82 per round, 0 errors, 0 timeouts); 16,000 random quotes, none changed by the engine; slowest call 0.04 ms; 10.1 KB, no forbidden words.
+
+**How to judge it once uploaded.** Compare complete matches by table composition (`analysis/hider_split.py`, `compare_versions.py` with the v9 time window), not the first 25: v7 was P&L +0.03 / win 0.463 over 107 matches, steps 1 to 3 +0.58 with step 0 -0.55; v9 should show a step 0 near -0.8 to -1.0 and a step 1 gain. Rollback: `dmapi.py activate 3be28a` (v7).
+
+## 16. How to reproduce
 
 ```
 cd dice_market
@@ -415,6 +450,12 @@ python3 analysis/midpack_charts.py data ../docs/figures                         
 python3 analysis/fit_prior.py data/day28.jsonl.gz 2 informed 3     # v8 prior (4th argument = step-0 clip)
 python3 analysis/v8_experiment.py 2500 10                          # v8 variants replayed on 28 Oct matches
 python3 analysis/v8_tune.py 1200 10                                # v8 widths, skew, take margins, lam
+python3 analysis/v8_matches.py data/mine_all2.jsonl.gz             # v8 live: blocks, step-0 by hiders, per-step quote accuracy
+python3 analysis/hider_split.py data/mine_all2.jsonl.gz            # hiding vs pushing at the same table
+python3 analysis/v8_live_tune.py tune 200                          # later-step variants replayed on my live v8 matches (variants in v8_variants.py)
+python3 analysis/hide_longer.py                                    # masked later quotes, replayed on hider-era matches
+python3 analysis/v9_tune.py 1500 17                                # hider variants (v9) on the newest matches; v9_final.py: on my real hider matches
+python3 analysis/trade_info.py data/day28.jsonl.gz 4               # do public trades improve the estimate
 python3 tourney.py agent.py                 # suite, incl. gate and pool: --pool adapt -n 400
 python3 analysis/tune_spreads.py agent.py 80 2     # tune half widths and skew
 python3 analysis/compare_variants.py agent.py 150  # compare settings on held-out mixes

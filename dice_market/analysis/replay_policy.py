@@ -69,7 +69,7 @@ def job(args):
     return edges_of(row, seat, mod, overrides, seed)
 
 
-def select_rows(data, which, limit, every=1, skip=0):
+def select_rows(data, which, limit, every=1, skip=0, since="", until="9999"):
     """The first `limit` eligible seat-matches after skipping the first `skip` (so tuning and validation sets are disjoint)."""
     rows = []
     seen = 0
@@ -79,7 +79,7 @@ def select_rows(data, which, limit, every=1, skip=0):
                 continue
             m = json.loads(line)
             if which == "mine":
-                if ME not in m["labels"] or V6_FROM <= m["at"] < V6_TO:
+                if ME not in m["labels"] or V6_FROM <= m["at"] < V6_TO or not (since <= m["at"][:19] < until):
                     continue
                 seen += 1
                 if seen <= skip:

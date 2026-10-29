@@ -16,6 +16,7 @@ import replays  # noqa: E402
 ME = "fanaberysty"
 V6_FROM, V6_TO = "2026-10-27T22:33:26", "2026-10-27T22:50:30"
 V7_FROM = "2026-10-28T08:13:48"
+V8_FROM = "2026-10-28T11:27:44"
 
 # opponent strength proxy: each label's pairwise win rate in the recent window
 strength = defaultdict(lambda: [0.0, 0])
@@ -35,9 +36,11 @@ with gzip.open(sys.argv[1], "rt") as f:
         rows.append(replays.expand(json.loads(line)))
 rows.sort(key=lambda m: m["at"])
 v5 = [m for m in rows if m["at"] < V6_FROM]
-v7 = [m for m in rows if m["at"] >= V7_FROM]
+v7 = [m for m in rows if V7_FROM <= m["at"] < V8_FROM]
+v8 = [m for m in rows if m["at"] >= V8_FROM]
 groups = {"v5, first 25 matches": v5[:25], "v5, matches 26-192": v5[25:], "v6, all 25 matches": [m for m in rows if V6_FROM <= m["at"] < V6_TO],
-          "v7, first 25 matches": v7[:25], "v7, all matches": v7}
+          "v7, first 25 matches": v7[:25], "v7, all matches": v7,
+          "v8, first 25 matches": v8[:25], "v8, matches 26-100": v8[25:100], "v8, matches 101+": v8[100:], "v8, all matches": v8}
 
 
 def roles(steps, s):
